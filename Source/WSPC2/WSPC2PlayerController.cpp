@@ -16,6 +16,7 @@
 #include "Blueprint/UserWidget.h"
 #include "WSPC2.h"
 #include "Engine/Engine.h"
+#include "Camera/CameraActor.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "TimerManager.h"
@@ -36,6 +37,14 @@ void AWSPC2PlayerController::BeginPlay()
 	{
 		FTimerHandle TestTimer;
 		GetWorld()->GetTimerManager().SetTimer(TestTimer, this, &AWSPC2PlayerController::SwapSeat, 6.0f, true);
+	}
+
+	// automated test hook: -WSPC2TestShots saves a screenshot every 20 seconds, swinging the chase camera
+	// to a different side each time (shots land in Saved/Screenshots)
+	if (IsLocalPlayerController() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestShots")))
+	{
+		FTimerHandle ShotTimer;
+		GetWorld()->GetTimerManager().SetTimer(ShotTimer, this, &AWSPC2PlayerController::TestScreenshot, 20.0f, true);
 	}
 }
 
@@ -193,6 +202,49 @@ void AWSPC2PlayerController::ServerToggleSiren_Implementation()
 	{
 		Car->SetSiren(!Car->IsSirenOn());
 	}
+}
+
+void AWSPC2PlayerController::TestScreenshot()
+{
+	// camera positions relative to the car: X forward, Y right, Z up
+	static const FVector Offsets[] =
+	{
+		FVector(0.0f, -750.0f, 110.0f),		// left side
+		FVector(520.0f, -480.0f, 170.0f),	// front left
+		FVector(-560.0f, 480.0f, 190.0f),	// rear right
+		FVector(650.0f, 0.0f, 130.0f),		// front
+	};
+
+	const int32 View = TestShotIndex % (UE_ARRAY_COUNT(Offsets) + 1);
+	++TestShotIndex;
+
+	if (AWSPC2Pawn* Car = GetCurrentVehicle())
+	{
+		if (View == UE_ARRAY_COUNT(Offsets))
+		{
+			// every fifth shot is the player's own chase camera
+			SetViewTarget(GetPawn());
+		}
+		else
+		{
+			if (!IsValid(TestCamera))
+			{
+				TestCamera = GetWorld()->SpawnActor<ACameraActor>();
+			}
+
+			const FVector Target = Car->GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
+			const FVector Location = Car->GetActorTransform().TransformPosition(Offsets[View]);
+
+			TestCamera->SetActorLocationAndRotation(Location, (Target - Location).Rotation());
+			SetViewTarget(TestCamera);
+		}
+	}
+
+	// let the camera move this frame, then capture
+	GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+	{
+		ConsoleCommand(TEXT("HighResShot 1280x720"));
+	});
 }
 
 void AWSPC2PlayerController::SwapSeat()

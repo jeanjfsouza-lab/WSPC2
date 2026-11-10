@@ -12,3 +12,7 @@ Saved/
 *.sdf
 *.xcodeproj
 *.xcworkspace
+
+# Third-party placeholder car model: local only, licence unclear
+ASSETS TO USE/
+Content/CrownVic/

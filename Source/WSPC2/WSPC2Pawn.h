@@ -243,6 +243,9 @@ public:
 
 protected:
 
+	/** Places the gunner seat and the roof light bar for a given car body (car space, cm) */
+	void SetCrewLayout(const FVector& GunnerSeatLocation, const FVector& LightBarCentre, float LightHalfSpacing);
+
 	/** Hook for siren sound and effects, implemented in Blueprint */
 	UFUNCTION(BlueprintImplementableEvent, Category="Vehicle")
 	void OnSirenChanged(bool bOn);

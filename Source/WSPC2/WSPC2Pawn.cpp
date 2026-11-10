@@ -88,6 +88,13 @@ void AWSPC2Pawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	DOREPLIFETIME(AWSPC2Pawn, bSirenOn);
 }
 
+void AWSPC2Pawn::SetCrewLayout(const FVector& GunnerSeatLocation, const FVector& LightBarCentre, float LightHalfSpacing)
+{
+	GunnerSeat->SetRelativeLocation(GunnerSeatLocation);
+	SirenLightLeft->SetRelativeLocation(LightBarCentre + FVector(0.0f, -LightHalfSpacing, 0.0f));
+	SirenLightRight->SetRelativeLocation(LightBarCentre + FVector(0.0f, LightHalfSpacing, 0.0f));
+}
+
 void AWSPC2Pawn::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);

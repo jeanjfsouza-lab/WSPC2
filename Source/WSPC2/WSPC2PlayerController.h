@@ -119,6 +119,14 @@ public:
 	/** Keeps the patrol car in the world when its driver disconnects */
 	virtual void PawnLeavingGame() override;
 
+	/** Test hook: swings the chase camera and saves a screenshot */
+	void TestScreenshot();
+
+	int32 TestShotIndex = 0;
+
+	UPROPERTY()
+	TObjectPtr<class ACameraActor> TestCamera;
+
 	/** Console command: same as pressing the change-seat key */
 	UFUNCTION(Exec)
 	void SwapSeat();
