@@ -91,19 +91,55 @@ void AWSPC2GameMode::SeatGunner(APlayerController* Player)
 
 bool AWSPC2GameMode::RequestSeatSwap(APlayerController* Requester)
 {
-	// both seats must be filled, and only the two occupants may ask
-	if (!IsValid(DriverPC) || !IsValid(GunnerPC) || !IsValid(PatrolCar) || !IsValid(GunnerPawn))
-	{
-		return false;
-	}
+	AWSPC2PlayerController* RequesterPC = Cast<AWSPC2PlayerController>(Requester);
 
-	if (Requester != DriverPC && Requester != GunnerPC)
+	// only someone sitting in the car may ask
+	if (!IsValid(PatrolCar) || !IsValid(Requester) || (Requester != DriverPC && Requester != GunnerPC))
 	{
 		return false;
 	}
 
 	// nobody climbs across the cabin at speed
-	if (PatrolCar->GetSpeedKmh() > GetDefault<UWSPC2VehicleTuning>()->SeatSwapMaxSpeedKmh)
+	const float MaxSpeed = GetDefault<UWSPC2VehicleTuning>()->SeatSwapMaxSpeedKmh;
+
+	if (PatrolCar->GetSpeedKmh() > MaxSpeed)
+	{
+		if (RequesterPC)
+		{
+			RequesterPC->ClientNotify(FString::Printf(TEXT("Stop the car to change seats (below %.0f km/h)"), MaxSpeed));
+		}
+
+		return false;
+	}
+
+	// alone in the car: just move to the other seat. The car stays parked with the handbrake on.
+	if (!IsValid(DriverPC) || !IsValid(GunnerPC))
+	{
+		if (Requester == DriverPC)
+		{
+			DriverPC = nullptr;
+			Requester->UnPossess();
+			SeatGunner(Requester);
+		}
+		else
+		{
+			GunnerPC = nullptr;
+			Requester->UnPossess();
+			Requester->Possess(PatrolCar);
+
+			DriverPC = Requester;
+			SetSeat(Requester, EWSPC2Seat::Driver);
+		}
+
+		if (RequesterPC)
+		{
+			RequesterPC->ClientNotify(Requester == DriverPC ? TEXT("You moved to the driver seat") : TEXT("You moved to the gunner seat"));
+		}
+
+		return true;
+	}
+
+	if (!IsValid(GunnerPawn))
 	{
 		return false;
 	}
@@ -124,6 +160,16 @@ bool AWSPC2GameMode::RequestSeatSwap(APlayerController* Requester)
 	SetSeat(GunnerPC, EWSPC2Seat::Gunner);
 
 	UE_LOG(LogWSPC2, Log, TEXT("Seats swapped: %s now drives"), *GetNameSafe(DriverPC));
+
+	if (AWSPC2PlayerController* NewDriver = Cast<AWSPC2PlayerController>(DriverPC))
+	{
+		NewDriver->ClientNotify(TEXT("Seats swapped: you drive"));
+	}
+
+	if (AWSPC2PlayerController* NewGunner = Cast<AWSPC2PlayerController>(GunnerPC))
+	{
+		NewGunner->ClientNotify(TEXT("Seats swapped: you are the gunner"));
+	}
 
 	return true;
 }

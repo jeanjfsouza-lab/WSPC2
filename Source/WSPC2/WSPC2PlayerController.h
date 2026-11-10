@@ -119,6 +119,14 @@ public:
 	/** Keeps the patrol car in the world when its driver disconnects */
 	virtual void PawnLeavingGame() override;
 
+	/** Console command: same as pressing the change-seat key */
+	UFUNCTION(Exec)
+	void SwapSeat();
+
+	/** Shows a short message on this player's screen. Called by the server. */
+	UFUNCTION(Client, Reliable)
+	void ClientNotify(const FString& Message);
+
 	/** The car this player is in, whether driving or riding as gunner. Works on clients too. */
 	AWSPC2Pawn* GetCurrentVehicle() const;
 

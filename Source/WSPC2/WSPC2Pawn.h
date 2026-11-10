@@ -223,6 +223,12 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** A driver took the wheel: release the parking brake */
+	virtual void PossessedBy(AController* NewController) override;
+
+	/** The driver left the seat: park the car */
+	virtual void UnPossessed() override;
+
 	/** Turns the siren on or off. Server only; clients go through their player controller. */
 	void SetSiren(bool bOn);
 

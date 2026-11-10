@@ -16,6 +16,9 @@
 #include "Blueprint/UserWidget.h"
 #include "WSPC2.h"
 #include "Engine/Engine.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "TimerManager.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerStart.h"
@@ -27,6 +30,13 @@ void AWSPC2PlayerController::BeginPlay()
 
 	// ensure we're attached to the vehicle pawn so that World Partition streaming works correctly
 	bAttachToPawn = true;
+
+	// automated test hook: -WSPC2TestSwap presses the change-seat key every 6 seconds
+	if (IsLocalPlayerController() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestSwap")))
+	{
+		FTimerHandle TestTimer;
+		GetWorld()->GetTimerManager().SetTimer(TestTimer, this, &AWSPC2PlayerController::SwapSeat, 6.0f, true);
+	}
 }
 
 void AWSPC2PlayerController::SetupInputComponent()
@@ -185,6 +195,21 @@ void AWSPC2PlayerController::ServerToggleSiren_Implementation()
 	}
 }
 
+void AWSPC2PlayerController::SwapSeat()
+{
+	ServerRequestSeatSwap();
+}
+
+void AWSPC2PlayerController::ClientNotify_Implementation(const FString& Message)
+{
+	UE_LOG(LogWSPC2, Log, TEXT("Notify: %s"), *Message);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Message);
+	}
+}
+
 AWSPC2Pawn* AWSPC2PlayerController::GetCurrentVehicle() const
 {
 	if (AWSPC2Pawn* Car = Cast<AWSPC2Pawn>(GetPawn()))
@@ -226,7 +251,7 @@ void AWSPC2PlayerController::Tick(float Delta)
 
 		const TCHAR* SeatName = Seat == EWSPC2Seat::Driver ? TEXT("DRIVER") : Seat == EWSPC2Seat::Gunner ? TEXT("GUNNER") : TEXT("NO SEAT");
 
-		const FString Status = FString::Printf(TEXT("%s  |  %3.0f km/h  |  Siren %s  |  [F] swap seats (stopped)  [H] siren"),
+		const FString Status = FString::Printf(TEXT("%s  |  %3.0f km/h  |  Siren %s  |  [F] change seat (stopped)  [H] siren"),
 			SeatName,
 			IsValid(Car) ? Car->GetSpeedKmh() : 0.0f,
 			IsValid(Car) && Car->IsSirenOn() ? TEXT("ON") : TEXT("off"));

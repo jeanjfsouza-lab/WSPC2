@@ -88,6 +88,24 @@ void AWSPC2Pawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	DOREPLIFETIME(AWSPC2Pawn, bSirenOn);
 }
 
+void AWSPC2Pawn::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	ChaosVehicleMovement->SetHandbrakeInput(false);
+}
+
+void AWSPC2Pawn::UnPossessed()
+{
+	Super::UnPossessed();
+
+	// nobody at the wheel: no throttle, no steering, handbrake on
+	ChaosVehicleMovement->SetThrottleInput(0.0f);
+	ChaosVehicleMovement->SetBrakeInput(0.0f);
+	ChaosVehicleMovement->SetSteeringInput(0.0f);
+	ChaosVehicleMovement->SetHandbrakeInput(true);
+}
+
 void AWSPC2Pawn::SetSiren(bool bOn)
 {
 	if (HasAuthority() && bSirenOn != bOn)
