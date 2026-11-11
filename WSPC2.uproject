@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.8",
+	"EngineAssociation": "{DC850606-4581-A6C8-1DD6-AEA2F8689DD0}",
 	"Category": "",
 	"Description": "Co-op police pursuit game: driver + gunner, simulation handling.",
 	"Modules": [
