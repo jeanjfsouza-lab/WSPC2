@@ -10,7 +10,7 @@
  *  They are applied when a car spawns, so a change takes effect on the next Play
  *  without recompiling.
  *
- *  Values model a 1990s rear-wheel-drive V8 police sedan with no driver aids.
+ *  Values model a rear-wheel-drive V8 police sedan: ABS as the real car has, no traction control.
  */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "WSPC2 Patrol Car Tuning"))
 class UWSPC2VehicleTuning : public UDeveloperSettings
@@ -44,6 +44,14 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Engine", meta = (Units = "Nm"))
 	float MaxTorqueNm = 390.0f;
+
+	/** Torque multiplication of the automatic's torque converter with the car stopped. 1 = none. */
+	UPROPERTY(Config, EditAnywhere, Category = "Engine")
+	float ConverterStallRatio = 2.0f;
+
+	/** Engine speed at which the converter's multiplication has faded to nothing */
+	UPROPERTY(Config, EditAnywhere, Category = "Engine")
+	float ConverterFadeRPM = 2800.0f;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Engine")
 	float MaxRPM = 5750.0f;
@@ -83,10 +91,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Transmission")
 	float TransmissionEfficiency = 0.88f;
 
-	// ---- Driver aids (off by default) ----
+	// ---- Driver aids ----
 
 	UPROPERTY(Config, EditAnywhere, Category = "Driver Aids")
-	bool bABS = false;
+	bool bABS = true;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Driver Aids")
 	bool bTractionControl = false;

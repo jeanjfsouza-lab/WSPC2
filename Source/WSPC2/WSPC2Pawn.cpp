@@ -15,6 +15,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/Engine.h"
 #include "TimerManager.h"
 
 #define LOCTEXT_NAMESPACE "VehiclePawn"
@@ -352,11 +353,34 @@ void AWSPC2Pawn::DoLookAround(float YawDelta)
 
 void AWSPC2Pawn::DoToggleCamera()
 {
-	// toggle the active camera flag
-	bFrontCameraActive = !bFrontCameraActive;
+	// cycle: chase camera, then each on-car view
+	CameraMode = (CameraMode + 1) % (OnCarViews.Num() + 1);
+	bFrontCameraActive = CameraMode > 0;
+
+	if (bFrontCameraActive)
+	{
+		FrontSpringArm->SetRelativeLocation(OnCarViews[CameraMode - 1]);
+	}
 
 	FrontCamera->SetActive(bFrontCameraActive);
 	BackCamera->SetActive(!bFrontCameraActive);
+
+	if (GEngine && IsLocallyControlled())
+	{
+		const FString Name = bFrontCameraActive && OnCarViewNames.IsValidIndex(CameraMode - 1) ? OnCarViewNames[CameraMode - 1] : FString(TEXT("Chase"));
+		GEngine->AddOnScreenDebugMessage(7001, 2.0f, FColor::Cyan, FString::Printf(TEXT("Camera: %s"), *Name));
+	}
+}
+
+void AWSPC2Pawn::SetOnCarViews(const TArray<FVector>& Locations, const TArray<FString>& Names)
+{
+	OnCarViews = Locations;
+	OnCarViewNames = Names;
+
+	if (bFrontCameraActive && OnCarViews.IsValidIndex(CameraMode - 1))
+	{
+		FrontSpringArm->SetRelativeLocation(OnCarViews[CameraMode - 1]);
+	}
 }
 
 void AWSPC2Pawn::DoResetVehicle()

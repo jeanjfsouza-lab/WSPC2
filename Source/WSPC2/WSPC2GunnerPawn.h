@@ -43,6 +43,9 @@ class AWSPC2GunnerPawn : public APawn
 	/** Time since the aim was last sent to the server */
 	float AimSendTimer = 0.0f;
 
+	/** False: view from the gunner's eyes. True: camera behind the car, looking along the aim. */
+	bool bThirdPerson = false;
+
 public:
 
 	AWSPC2GunnerPawn();
@@ -57,6 +60,9 @@ public:
 
 	/** Turns the aim by a number of degrees. Called on the owning client. */
 	void AddAimInput(const FVector2D& DeltaDegrees);
+
+	/** Switches between first and third person. Local to this player. */
+	void ToggleView();
 
 	/** Direction the weapon points at, in world space, including the sway */
 	FRotator GetAimRotation() const;

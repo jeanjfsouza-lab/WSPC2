@@ -82,6 +82,9 @@ protected:
 	TObjectPtr<UInputAction> SirenAction;
 
 	UPROPERTY()
+	TObjectPtr<UInputAction> CameraAction;
+
+	UPROPERTY()
 	TObjectPtr<UInputAction> GunnerLookMouseAction;
 
 	UPROPERTY()
@@ -108,6 +111,22 @@ protected:
 
 	void OnSwapSeat(const FInputActionValue& Value);
 	void OnSiren(const FInputActionValue& Value);
+	void OnCamera(const FInputActionValue& Value);
+
+	// ---- Automated test drive (-WSPC2TestDrive): full throttle to 100 km/h, then full brake ----
+
+	bool bTestDrive = false;
+	int32 TestDrivePhase = 0;
+	float TestDriveClock = 0.0f;
+	float TestDriveDistance = 0.0f;
+	float TestDriveTo60 = -1.0f;
+	float TestDrivePeakSpeed = 0.0f;
+	float TestDriveLastFrontAngle = 0.0f;
+	bool bTestDriveSpinLogged = false;
+	bool bTestDriveStripBuilt = false;
+	float TestDriveStartYaw = 0.0f;
+
+	void TickTestDrive(float Delta);
 	void OnGunnerLookMouse(const FInputActionValue& Value);
 	void OnGunnerLookStick(const FInputActionValue& Value);
 

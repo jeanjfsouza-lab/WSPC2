@@ -4,6 +4,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/Engine.h"
 
 AWSPC2GunnerPawn::AWSPC2GunnerPawn()
 {
@@ -47,6 +48,16 @@ void AWSPC2GunnerPawn::AddAimInput(const FVector2D& DeltaDegrees)
 {
 	RelativeAim.X = FMath::Clamp(RelativeAim.X + DeltaDegrees.X, MinYaw, MaxYaw);
 	RelativeAim.Y = FMath::Clamp(RelativeAim.Y + DeltaDegrees.Y, MinPitch, MaxPitch);
+}
+
+void AWSPC2GunnerPawn::ToggleView()
+{
+	bThirdPerson = !bThirdPerson;
+
+	if (GEngine && IsLocallyControlled())
+	{
+		GEngine->AddOnScreenDebugMessage(7001, 2.0f, FColor::Cyan, bThirdPerson ? TEXT("Camera: Third person") : TEXT("Camera: First person"));
+	}
 }
 
 FRotator AWSPC2GunnerPawn::GetAimRotation() const
@@ -104,7 +115,19 @@ void AWSPC2GunnerPawn::Tick(float DeltaSeconds)
 	UpdateSway(DeltaSeconds);
 
 	// the view is the aim: what the gunner sees shakes exactly as the weapon does
-	Camera->SetWorldRotation(GetAimRotation());
+	const FRotator Aim = GetAimRotation();
+
+	if (bThirdPerson && IsValid(Vehicle))
+	{
+		// orbit the car: the camera sits behind the aim direction, so the car and the target are both in view
+		const FVector Pivot = Vehicle->GetActorLocation() + FVector(0.0f, 0.0f, 170.0f);
+		Camera->SetWorldLocationAndRotation(Pivot - Aim.Vector() * 720.0f, Aim);
+	}
+	else
+	{
+		Camera->SetRelativeLocation(FVector::ZeroVector);
+		Camera->SetWorldRotation(Aim);
+	}
 
 	if (IsLocallyControlled() && !HasAuthority())
 	{

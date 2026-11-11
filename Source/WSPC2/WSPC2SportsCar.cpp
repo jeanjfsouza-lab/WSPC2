@@ -164,7 +164,9 @@ void AWSPC2SportsCar::ApplySedanBody()
 	// crew positions for this body: gunner at the front passenger window, light bar on the roof,
 	// first-person camera at the driver's head
 	SetCrewLayout(FVector(0.0f, 78.0f, 118.0f), FVector(-40.0f, 0.0f, 158.0f), 40.0f);
-	GetFrontSpringArm()->SetRelativeLocation(FVector(-5.0f, -38.0f, 118.0f));
+	SetOnCarViews(
+		{ FVector(-5.0f, -38.0f, 118.0f), FVector(105.0f, 0.0f, 112.0f), FVector(268.0f, 0.0f, 52.0f) },
+		{ TEXT("Dashboard"), TEXT("Hood"), TEXT("Bumper") });
 
 	// the sedan is longer and taller than the sports car: pull the chase camera back and up
 	GetBackSpringArm()->TargetArmLength = 820.0f;
@@ -193,8 +195,18 @@ void AWSPC2SportsCar::Tick(float Delta)
 
 			// same formula the engine's wheel animation uses
 			Position += -Wheel->GetSuspensionAxis() * Wheel->GetSuspensionOffset();
-			Motion.Pitch = Wheel->GetRotationAngle();
 			Motion.Yaw = Wheel->GetSteerAngle();
+
+			// A five-spoke wheel looks the same every 72 degrees. At road speed the real wheel turns more
+			// than that per frame, so drawing the true angle makes it seem to crawl or run backwards.
+			// Limit the drawn step per frame: above that speed the wheel just reads as "spinning fast".
+			const float TrueAngle = Wheel->GetRotationAngle();
+			const float Step = FMath::Clamp(TrueAngle - LastWheelAngle[Index], -MaxDrawnSpinStep, MaxDrawnSpinStep);
+
+			LastWheelAngle[Index] = TrueAngle;
+			DrawnWheelAngle[Index] = FMath::Fmod(DrawnWheelAngle[Index] + Step, 360.0f);
+
+			Motion.Pitch = DrawnWheelAngle[Index];
 		}
 
 		// the wheel mesh is a left wheel: the right side gets it turned around
@@ -248,7 +260,6 @@ void AWSPC2SportsCar::ApplyTuning()
 	Movement->DifferentialSetup.DifferentialType = EVehicleDifferential::RearWheelDrive;
 
 	// engine: a lazy V8, strong in the midrange and fading towards the redline
-	Movement->EngineSetup.MaxTorque = Tuning->MaxTorqueNm;
 	Movement->EngineSetup.MaxRPM = Tuning->MaxRPM;
 	Movement->EngineSetup.EngineIdleRPM = Tuning->IdleRPM;
 	Movement->EngineSetup.EngineBrakeEffect = Tuning->EngineBrakeEffect;
@@ -262,14 +273,28 @@ void AWSPC2SportsCar::ApplyTuning()
 	{
 		const float RpmScale = Tuning->MaxRPM / 5750.0f;
 
+		// engine torque as a fraction of its peak
+		static const float Rpm[] = { 0.0f, 750.0f, 1500.0f, 2500.0f, 4000.0f, 5000.0f, 5750.0f };
+		static const float Fraction[] = { 0.55f, 0.62f, 0.80f, 0.93f, 1.0f, 0.90f, 0.72f };
+
+		// The simulation has no torque converter, so an automatic would launch on idle torque alone.
+		// A real converter multiplies torque when the car is nearly stopped and fades out as revs rise;
+		// fold that into the curve.
+		float Peak = 0.0f;
+
 		TorqueCurve->Reset();
-		TorqueCurve->AddKey(0.0f, 0.55f);
-		TorqueCurve->AddKey(750.0f * RpmScale, 0.62f);
-		TorqueCurve->AddKey(1500.0f * RpmScale, 0.80f);
-		TorqueCurve->AddKey(2500.0f * RpmScale, 0.93f);
-		TorqueCurve->AddKey(4000.0f * RpmScale, 1.0f);
-		TorqueCurve->AddKey(5000.0f * RpmScale, 0.90f);
-		TorqueCurve->AddKey(5750.0f * RpmScale, 0.72f);
+
+		for (int32 Key = 0; Key < UE_ARRAY_COUNT(Rpm); ++Key)
+		{
+			const float Fade = FMath::Clamp(1.0f - Rpm[Key] / Tuning->ConverterFadeRPM, 0.0f, 1.0f);
+			const float Value = Fraction[Key] * (1.0f + (Tuning->ConverterStallRatio - 1.0f) * Fade);
+
+			TorqueCurve->AddKey(Rpm[Key] * RpmScale, Value);
+			Peak = FMath::Max(Peak, Value);
+		}
+
+		// the simulation rescales the curve so its highest point equals MaxTorque
+		Movement->EngineSetup.MaxTorque = Tuning->MaxTorqueNm * Peak;
 	}
 
 	// transmission

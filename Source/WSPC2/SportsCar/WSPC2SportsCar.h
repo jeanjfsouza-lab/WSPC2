@@ -41,6 +41,13 @@ class AWSPC2SportsCar : public AWSPC2Pawn
 	/** True once the sedan model was found and applied */
 	bool bUsingSedanBody = false;
 
+	/** Wheel spin as simulated last frame, and as drawn (see Tick) */
+	float LastWheelAngle[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float DrawnWheelAngle[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	/** Largest wheel rotation drawn in one frame, in degrees; under half the spoke spacing */
+	float MaxDrawnSpinStep = 27.0f;
+
 public:
 
 	AWSPC2SportsCar();

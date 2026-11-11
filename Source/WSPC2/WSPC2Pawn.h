@@ -103,6 +103,16 @@ protected:
 	/** Keeps track of which camera is active */
 	bool bFrontCameraActive = false;
 
+	/** 0 is the chase camera; 1..N are the on-car views below */
+	int32 CameraMode = 0;
+
+	/** On-car camera positions (car space) and their names, cycled after the chase camera */
+	TArray<FVector> OnCarViews = { FVector(30.0f, 0.0f, 120.0f) };
+	TArray<FString> OnCarViewNames = { TEXT("Hood") };
+
+	/** Replaces the on-car camera positions for a given body */
+	void SetOnCarViews(const TArray<FVector>& Locations, const TArray<FString>& Names);
+
 	/** Keeps track of whether the car is flipped. If this is true for two flip checks, resets the vehicle automatically */
 	bool bPreviousFlipCheck = false;
 
