@@ -58,6 +58,12 @@ public:
 
 	AWSPC2Pawn* GetVehicle() const { return Vehicle; }
 
+	/** True when the camera is behind the car; false when it looks from the gunner's own eyes */
+	bool IsThirdPerson() const { return bThirdPerson; }
+
+	/** The aim relative to the car (yaw, pitch degrees), without the sway; replicated to everyone but the owner */
+	FVector2D GetRelativeAimDeg() const { return RelativeAim; }
+
 	/** Turns the aim by a number of degrees. Called on the owning client. */
 	void AddAimInput(const FVector2D& DeltaDegrees);
 

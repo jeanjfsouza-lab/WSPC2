@@ -12,6 +12,9 @@ class UInputAction;
 class UChaosWheeledVehicleMovementComponent;
 class UPointLightComponent;
 class USceneComponent;
+class UStaticMeshComponent;
+class UWSPC2VehicleDamageComponent;
+class UWSPC2VehicleAudioComponent;
 struct FInputActionValue;
 
 /**
@@ -57,6 +60,21 @@ class AWSPC2Pawn : public AWheeledVehiclePawn
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category ="Components", meta = (AllowPrivateAccess = "true"))
 	UPointLightComponent* SirenLightRight;
 
+	/** The glowing lenses of the light bar: what the eye sees flash, day or night */
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UStaticMeshComponent* SirenLensLeft;
+
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UStaticMeshComponent* SirenLensRight;
+
+	/** Real-time Chaos collision & vehicle deformation/damage manager */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category ="Components", meta = (AllowPrivateAccess = "true"))
+	UWSPC2VehicleDamageComponent* VehicleDamage;
+
+	/** Engine, tyre, wind, crash and siren sounds */
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UWSPC2VehicleAudioComponent* VehicleAudio;
+
 	/** Siren state, owned by the server and replicated to everyone */
 	UPROPERTY(ReplicatedUsing = OnRep_Siren)
 	bool bSirenOn = false;
@@ -64,11 +82,20 @@ class AWSPC2Pawn : public AWheeledVehiclePawn
 	/** Drives the light bar flash */
 	float SirenFlashTime = 0.0f;
 
+	/** True when this chassis carries an external roof light bar (shows external glowing lens blocks). */
+	bool bHasRoofLightbar = true;
+
 	UFUNCTION()
 	void OnRep_Siren();
 
 	/** Shows or hides the light bar for the current siren state and flash phase */
 	void UpdateSirenLights();
+
+	/** Widens the view and lets the chase camera fall back as the car goes faster */
+	void UpdateSpeedCamera(float Delta);
+
+	/** Smoothed 0..1 speed used by the cameras */
+	float CameraSpeedAlpha = 0.0f;
 
 protected:
 
@@ -245,16 +272,44 @@ public:
 	UFUNCTION(BlueprintPure, Category="Vehicle")
 	bool IsSirenOn() const { return bSirenOn; }
 
+	/** Fraction of full lock the driver may use now: limited by speed when turning in, never when countersteering */
+	float GetSteeringAllowance(float Input) const;
+
 	/** Ground speed in km/h, always positive */
 	UFUNCTION(BlueprintPure, Category="Vehicle")
 	float GetSpeedKmh() const;
 
+	/** Human-readable name of the active hero chassis (overridden by AWSPC2SportsCar). */
+	UFUNCTION(BlueprintPure, Category="Vehicle")
+	virtual FString GetActiveVehicleDisplayName() const { return TEXT("Patrol Cruiser"); }
+
 	USceneComponent* GetGunnerSeat() const { return GunnerSeat; }
+
+	/** Name of the camera in use: "Chase" or one of the on-car views ("Dashboard", "Hood", "Bumper") */
+	FString GetActiveCameraName() const
+	{
+		return bFrontCameraActive && OnCarViewNames.IsValidIndex(CameraMode - 1) ? OnCarViewNames[CameraMode - 1] : FString(TEXT("Chase"));
+	}
+
+	/** True while the driver looks through the in-car "Dashboard" view (the camera is where the driver's head is) */
+	bool IsCabinViewActive() const { return GetActiveCameraName() == TEXT("Dashboard"); }
+
+	/** The gunner's weapon muzzle (world) when an officer is drawn holding one; false otherwise */
+	virtual bool GetGunnerMuzzle(FVector& OutLocation, FVector& OutDirection) const { return false; }
+
+	/** The gunner's weapons, rounds, lock and shots */
+	FORCEINLINE class UWSPC2GunneryComponent* GetGunnery() const { return Gunnery; }
 
 protected:
 
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	TObjectPtr<class UWSPC2GunneryComponent> Gunnery;
+
 	/** Places the gunner seat and the roof light bar for a given car body (car space, cm) */
 	void SetCrewLayout(const FVector& GunnerSeatLocation, const FVector& LightBarCentre, float LightHalfSpacing);
+
+	/** Toggles external roof lightbar lens meshes (hidden on undercover / non-lightbar hero chassis). */
+	void SetRoofLightbarEnabled(bool bEnabled);
 
 	/** Hook for siren sound and effects, implemented in Blueprint */
 	UFUNCTION(BlueprintImplementableEvent, Category="Vehicle")
@@ -275,4 +330,6 @@ public:
 	FORCEINLINE UCameraComponent* GetBackCamera() const { return BackCamera; }
 	/** Returns the cast Chaos Vehicle Movement subobject */
 	FORCEINLINE const TObjectPtr<UChaosWheeledVehicleMovementComponent>& GetChaosVehicleMovement() const { return ChaosVehicleMovement; }
+	/** Returns the Chaos vehicle damage component */
+	FORCEINLINE UWSPC2VehicleDamageComponent* GetVehicleDamage() const { return VehicleDamage; }
 };

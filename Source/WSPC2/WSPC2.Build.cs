@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -16,11 +16,16 @@ public class WSPC2 : ModuleRules
 			"EnhancedInput",
 			"ChaosVehicles",
 			"PhysicsCore",
+			"AssetRegistry",
+			"Niagara",
 			"UMG",
 			"Slate",
 			"SlateCore",
 			"DeveloperSettings",
-			"NetCore"
+			"NetCore",
+			"Landscape",
+			"RenderCore",
+			"RHI"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {
@@ -33,6 +38,12 @@ public class WSPC2 : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+
+		// editor-only helpers used by the city build scripts (WSPC2CityTools)
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "MeshMergeUtilities", "MeshDescription", "StaticMeshDescription" });
+		}
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

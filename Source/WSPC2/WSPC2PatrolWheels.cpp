@@ -16,9 +16,13 @@ namespace
 		Wheel->bABSEnabled = false;
 		Wheel->bTractionControlEnabled = false;
 
+		// The wheel finds the ground by sweeping a ball of its own radius instead of one thin ray under the hub.
+		// A ray meets a kerb as an instant 15 cm step and the car stops dead against it; a ball rolls up its edge.
+		Wheel->SweepShape = ESweepShape::Spherecast;
+
 		// soft springs and a weak anti-roll bar, so the body leans and dives
-		Wheel->SuspensionMaxRaise = 9.0f;
-		Wheel->SuspensionMaxDrop = 11.0f;
+		Wheel->SuspensionMaxRaise = 13.0f;
+		Wheel->SuspensionMaxDrop = 13.0f;
 		Wheel->SuspensionDampingRatio = 0.45f;
 		Wheel->SpringRate = 200.0f;
 		Wheel->SpringPreload = 50.0f;
@@ -44,6 +48,8 @@ UWSPC2PatrolWheelFront::UWSPC2PatrolWheelFront()
 	bAffectedByEngine = false;
 	bAffectedByHandbrake = false;
 
+	// SideSlipModifier (grip a sliding tyre keeps) comes from UWSPC2VehicleTuning::FrontSlideGrip
+
 	MaxBrakeTorque = 3200.0f;
 	MaxHandBrakeTorque = 0.0f;
 }
@@ -64,6 +70,8 @@ UWSPC2PatrolWheelRear::UWSPC2PatrolWheelRear()
 
 	bAffectedByEngine = true;
 	bAffectedByHandbrake = true;
+
+	// SideSlipModifier (grip a sliding tyre keeps) comes from UWSPC2VehicleTuning::RearSlideGrip
 
 	MaxBrakeTorque = 1900.0f;
 	MaxHandBrakeTorque = 4500.0f;

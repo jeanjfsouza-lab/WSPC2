@@ -16,3 +16,28 @@ Saved/
 # Third-party placeholder car model: local only, licence unclear
 ASSETS TO USE/
 Content/CrownVic/
+
+# Heavy Fab asset packs (local only)
+Content/CitySampleVehicles/
+Content/CitySampleBuildings/
+Content/CitySampleCrowds/
+Content/CitySampleCrowd/
+Content/VehicleVarietyPack/
+Content/VehicleVarietyVol2/
+# Built from the City Sample crowd pack by Tools/crew (local only: Epic content, the repository is public)
+Content/Crew/
+
+# City Sample assets copied from the full sample by Tools/city/migrate_assets.py (local only)
+Content/Road/
+Content/Prop/
+Content/Megascans/
+Content/MSPresets/
+Content/Textures/
+Content/Building/
+Content/Material/
+Content/Crowd/
+# Generated city geometry and map (rebuilt by Tools/city)
+Content/City/Generated/
+# Third-party/prepared vehicle GLBs imported by Tools/vehicles/import_vehicles.py (local only)
+Content/Vehicles/Imported/
+__pycache__/
