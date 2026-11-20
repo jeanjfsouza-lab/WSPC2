@@ -11,6 +11,8 @@ class AWSPC2Pawn;
 class AWSPC2GunnerPawn;
 class UStaticMeshComponent;
 class UPointLightComponent;
+class USoundBase;
+class USoundAttenuation;
 
 /** What the gunner holds. None: nothing, and he sits inside the car. */
 UENUM(BlueprintType)
@@ -130,11 +132,14 @@ protected:
 	UPROPERTY(Replicated)
 	TObjectPtr<AActor> LockedTarget;
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_Reloading)
 	bool bReloading = false;
 
 	UFUNCTION()
 	void OnRep_Weapon();
+
+	UFUNCTION()
+	void OnRep_Reloading();
 
 	/** Draws the shots on every machine: tracers from the muzzle to where each pellet stopped, a flash */
 	UFUNCTION(NetMulticast, Unreliable)
@@ -170,6 +175,21 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> LockMarker;
+
+	/** Sounds (Tools/audio/make_gunshots.py), loaded on first use; missing assets leave the weapons silent */
+	enum class ESound : uint8 { Pistol, Shotgun, Rifle, Reload, Draw, Count };
+	void PlayGunSound(ESound Sound, const FVector& Where, float VolumeScale = 1.0f);
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USoundBase>> Sounds;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundAttenuation> ShotAttenuation;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundAttenuation> HandlingAttenuation;
+
+	bool bSoundsLoaded = false;
 
 	float TracerAge = 1.0f;
 	float MarkerSpin = 0.0f;

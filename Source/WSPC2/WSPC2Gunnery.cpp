@@ -13,6 +13,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundBase.h"
 
 namespace WSPC2Guns
 {
@@ -195,6 +197,72 @@ void UWSPC2GunneryComponent::CycleWeapon(int32 Direction)
 void UWSPC2GunneryComponent::OnRep_Weapon()
 {
 	DrawnTime = 0.0f;
+
+	if (Weapon != EWSPC2Weapon::None && GetOwner())
+	{
+		PlayGunSound(ESound::Draw, GetOwner()->GetActorTransform().TransformPosition(WSPC2Guns::WindowMuzzle));
+	}
+}
+
+void UWSPC2GunneryComponent::OnRep_Reloading()
+{
+	if (bReloading && GetOwner())
+	{
+		PlayGunSound(ESound::Reload, GetOwner()->GetActorTransform().TransformPosition(WSPC2Guns::WindowMuzzle));
+	}
+}
+
+void UWSPC2GunneryComponent::PlayGunSound(ESound Sound, const FVector& Where, float VolumeScale)
+{
+	if (GetNetMode() == NM_DedicatedServer || !GetWorld())
+	{
+		return;
+	}
+
+	if (!bSoundsLoaded)
+	{
+		bSoundsLoaded = true;
+		static const TCHAR* Names[(int32)ESound::Count] = { TEXT("Pistol"), TEXT("Shotgun"), TEXT("Rifle"), TEXT("Reload"), TEXT("Draw") };
+		int32 Found = 0;
+		for (const TCHAR* Name : Names)
+		{
+			const FString Path = FString::Printf(TEXT("/Game/Audio/Generated/WSPC2_Gun_%s.WSPC2_Gun_%s"), Name, Name);
+			USoundBase* Loaded = LoadObject<USoundBase>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+			Found += Loaded ? 1 : 0;
+			Sounds.Add(Loaded);
+		}
+		UE_LOG(LogWSPC2, Log, TEXT("Gunnery: %d of %d weapon sounds loaded"), Found, (int32)ESound::Count);
+
+		// shots carry far (full up to 15 m, audible past 400 m); handling noises stay near the car
+		auto MakeAttenuation = [this](float FullRadius, float Falloff)
+		{
+			USoundAttenuation* Attenuation = NewObject<USoundAttenuation>(this);
+			FSoundAttenuationSettings& Settings = Attenuation->Attenuation;
+			Settings.bAttenuate = true;
+			Settings.bSpatialize = true;
+			Settings.AttenuationShape = EAttenuationShape::Sphere;
+			Settings.AttenuationShapeExtents = FVector(FullRadius);
+			Settings.FalloffDistance = Falloff;
+			Settings.DistanceAlgorithm = EAttenuationDistanceModel::NaturalSound;
+			Settings.dBAttenuationAtMax = -60.0f;
+			Settings.NonSpatializedRadiusStart = FullRadius;
+			Settings.NonSpatializedRadiusEnd = FullRadius * 0.35f;
+			return Attenuation;
+		};
+		ShotAttenuation = MakeAttenuation(1500.0f, 40000.0f);
+		HandlingAttenuation = MakeAttenuation(400.0f, 2500.0f);
+	}
+
+	USoundBase* Asset = Sounds.IsValidIndex((int32)Sound) ? Sounds[(int32)Sound].Get() : nullptr;
+	if (!Asset)
+	{
+		return;
+	}
+
+	const bool bShot = Sound == ESound::Pistol || Sound == ESound::Shotgun || Sound == ESound::Rifle;
+	const float Pitch = bShot ? FMath::FRandRange(0.96f, 1.04f) : 1.0f;
+	UGameplayStatics::PlaySoundAtLocation(this, Asset, Where, FRotator::ZeroRotator, VolumeScale * (bShot ? FMath::FRandRange(0.92f, 1.0f) : 1.0f),
+		Pitch, 0.0f, bShot ? ShotAttenuation.Get() : HandlingAttenuation.Get());
 }
 
 void UWSPC2GunneryComponent::SetTrigger(bool bDown)
@@ -466,6 +534,13 @@ void UWSPC2GunneryComponent::MulticastShotFx_Implementation(FVector_NetQuantize 
 	MuzzleFlash->SetWorldLocation(Start);
 	MuzzleFlash->SetVisibility(true);
 	TracerAge = 0.0f;
+
+	switch (Weapon)
+	{
+	case EWSPC2Weapon::Shotgun: PlayGunSound(ESound::Shotgun, Start); break;
+	case EWSPC2Weapon::Rifle: PlayGunSound(ESound::Rifle, Start); break;
+	default: PlayGunSound(ESound::Pistol, Start); break;
+	}
 }
 
 void UWSPC2GunneryComponent::UpdateDisplayAim(float DeltaTime)
@@ -620,6 +695,7 @@ void UWSPC2GunneryComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	{
 		bReloading = true;
 		ReloadLeft = Spec.ReloadSeconds;
+		OnRep_Reloading();
 	}
 }
 
