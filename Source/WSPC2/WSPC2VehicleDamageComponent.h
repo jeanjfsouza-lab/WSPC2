@@ -129,6 +129,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
 	int32 GetPuncturedWheelCount() const;
 
+	/** Friction scale the damage puts on a wheel (flat tyre, bent rim); 1 when intact */
+	float GetWheelFrictionScale(int32 WheelIndex) const { return WheelIndex >= 0 && WheelIndex < 4 ? WheelFrictionScale[WheelIndex] : 1.0f; }
+
 	bool IsWheelPunctured(int32 WheelIndex) const
 	{
 		return (WheelIndex >= 0 && WheelIndex < 4) ? bWheelPunctured[WheelIndex] : false;
@@ -277,6 +280,7 @@ private:
 	FVector WheelHubPositions[4];
 	float WheelBaseRadii[4] = { 35.2f, 35.2f, 35.2f, 35.2f };
 	float WheelBaseFriction[4] = { 2.35f, 2.35f, 2.42f, 2.42f };
+	float WheelFrictionScale[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float WheelBaseBrakeTorque[4] = { 4200.0f, 4200.0f, 2200.0f, 2200.0f };
 	float WheelBaseSteerAngle[4] = { 36.0f, 36.0f, 0.0f, 0.0f };
 	bool WheelBaseABS[4] = { true, true, true, true };

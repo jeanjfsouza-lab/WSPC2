@@ -235,6 +235,8 @@ AActor* UWSPC2CityTools::SpawnInstancedMeshes(UObject* WorldContextObject, UStat
 	Instances->SetCollisionProfileName(bCollision ? UCollisionProfile::BlockAll_ProfileName : UCollisionProfile::NoCollision_ProfileName);
 	Instances->SetCollisionEnabled(bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	Instances->SetHiddenInGame(bHiddenInGame);
+	// collision only: invisible in the editor too, where the grey boxes would otherwise hide the buildings they enclose
+	Instances->SetVisibility(!bHiddenInGame);
 	Instances->SetCastShadow(!bHiddenInGame);
 	if (bLightweight || bHiddenInGame)
 	{

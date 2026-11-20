@@ -1233,6 +1233,7 @@ void UWSPC2VehicleDamageComponent::ApplyMechanicalPenalties()
 			VehMove->SetWheelRadius(w, FMath::Max(18.0f, WheelBaseRadii[w] - RadiusDrop));
 
 			const float FricScale = bFlat ? FlatFrictionScale : FMath::Lerp(1.0f, 0.84f, WheelDmg);
+			WheelFrictionScale[w] = FricScale;
 			VehMove->SetWheelFrictionMultiplier(w, WheelBaseFriction[w] * FricScale);
 			VehMove->SetWheelSlipGraphMultiplier(w, bFlat ? 0.70f : FMath::Lerp(1.0f, 0.88f, WheelDmg));
 

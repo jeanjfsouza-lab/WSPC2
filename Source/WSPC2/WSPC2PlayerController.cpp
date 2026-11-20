@@ -19,6 +19,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "InputModifiers.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "ChaosVehicleWheel.h"
 #include "Blueprint/UserWidget.h"
@@ -402,7 +403,15 @@ void AWSPC2PlayerController::SetupCrewInput()
 	CrewMappingContext->MapKey(GunnerTriggerAction, EKeys::Gamepad_RightTrigger);
 
 	CrewMappingContext->MapKey(GunnerLookMouseAction, EKeys::Mouse2D);
-	CrewMappingContext->MapKey(GunnerLookStickAction, EKeys::Gamepad_Right2D);
+	{
+		// without a dead zone a resting stick that is a little off centre turns the view by itself
+		FEnhancedActionKeyMapping& StickMapping = CrewMappingContext->MapKey(GunnerLookStickAction, EKeys::Gamepad_Right2D);
+		UInputModifierDeadZone* DeadZone = NewObject<UInputModifierDeadZone>(this);
+		DeadZone->Type = EDeadZoneType::Radial;
+		DeadZone->LowerThreshold = 0.2f;
+		DeadZone->UpperThreshold = 1.0f;
+		StickMapping.Modifiers.Add(DeadZone);
+	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
@@ -1199,6 +1208,12 @@ void AWSPC2PlayerController::OnGunnerLookMouse(const FInputActionValue& Value)
 		const FVector2D Delta = Value.Get<FVector2D>();
 		Gunner->AddAimInput(FVector2D(Delta.X, Delta.Y) * GunnerMouseSensitivity);
 	}
+	else if (AWSPC2Pawn* Car = Cast<AWSPC2Pawn>(GetPawn()))
+	{
+		// driving: the mouse turns the chase camera around the car (up = camera lower, looking up)
+		const FVector2D Delta = Value.Get<FVector2D>();
+		Car->AddChaseLook(FVector2D(Delta.X, -Delta.Y) * GunnerMouseSensitivity);
+	}
 }
 
 void AWSPC2PlayerController::OnGunnerLookStick(const FInputActionValue& Value)
@@ -1208,6 +1223,13 @@ void AWSPC2PlayerController::OnGunnerLookStick(const FInputActionValue& Value)
 		const FVector2D Stick = Value.Get<FVector2D>();
 		const float Step = GunnerStickRate * GetWorld()->GetDeltaSeconds();
 		Gunner->AddAimInput(FVector2D(Stick.X, Stick.Y) * Step);
+	}
+	else if (AWSPC2Pawn* Car = Cast<AWSPC2Pawn>(GetPawn()))
+	{
+		// driving: the right stick turns the chase camera all the way around the car
+		const FVector2D Stick = Value.Get<FVector2D>();
+		const float Step = GetDefault<UWSPC2VehicleTuning>()->ChaseOrbitStickRate * GetWorld()->GetDeltaSeconds();
+		Car->AddChaseLook(FVector2D(Stick.X, -Stick.Y) * Step);
 	}
 }
 

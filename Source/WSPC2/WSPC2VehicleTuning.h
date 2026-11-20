@@ -127,6 +127,26 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Brakes")
 	float HandbrakeTorque = 6800.0f;
 
+	/** Extra deceleration on top of the tyres, in g at full brake (moving forward, on the ground). The tyres alone stop
+	 *  the car at ~0.83 g whatever the brake torque; this brings it to a police car's ~1 g without adding cornering grip */
+	UPROPERTY(Config, EditAnywhere, Category = "Brakes")
+	float BrakeAssistG = 0.0f;
+
+	/** Rear grip kept while the handbrake is pulled (1 = all of it); lower swings the tail out more readily */
+	UPROPERTY(Config, EditAnywhere, Category = "Brakes")
+	float HandbrakeRearGrip = 1.0f;
+
+	/** Rear grip taken away at full throttle (0.15 = 15 %), so the tail steps out on power at low and medium speed */
+	UPROPERTY(Config, EditAnywhere, Category = "Tyres")
+	float RearThrottleGripLoss = 0.0f;
+
+	/** The throttle grip loss is whole up to the first speed and gone at the second (stable at high speed) */
+	UPROPERTY(Config, EditAnywhere, Category = "Tyres", meta = (Units = "km/h"))
+	float RearThrottleGripLossFullBelowKmh = 50.0f;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Tyres", meta = (Units = "km/h"))
+	float RearThrottleGripLossGoneAboveKmh = 110.0f;
+
 	// ---- Suspension (soft, with body roll) ----
 
 	UPROPERTY(Config, EditAnywhere, Category = "Suspension")
@@ -248,6 +268,28 @@ public:
 	/** Speed at which the widest view and the full stretch are reached */
 	UPROPERTY(Config, EditAnywhere, Category = "Camera", meta = (Units = "km/h"))
 	float CameraFullSpeedKmh = 170.0f;
+
+	/** The chase camera looks down at the car by this much, so the whole car stays in the frame up close */
+	UPROPERTY(Config, EditAnywhere, Category = "Camera", meta = (Units = "deg"))
+	float ChaseLookDownDeg = 0.0f;
+
+	/** Chase camera orbit with the right stick (degrees per second at full tilt); the mouse moves it directly */
+	UPROPERTY(Config, EditAnywhere, Category = "Camera")
+	float ChaseOrbitStickRate = 200.0f;
+
+	/** Seconds without look input before the chase camera swings back behind a moving car, and how fast it does */
+	UPROPERTY(Config, EditAnywhere, Category = "Camera", meta = (Units = "s"))
+	float ChaseRecenterDelay = 2.0f;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Camera")
+	float ChaseRecenterRate = 2.0f;
+
+	/** How far the chase camera may go below (negative) and above its normal height, in degrees of orbit */
+	UPROPERTY(Config, EditAnywhere, Category = "Camera", meta = (Units = "deg"))
+	float ChaseOrbitPitchMin = -10.0f;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Camera", meta = (Units = "deg"))
+	float ChaseOrbitPitchMax = 40.0f;
 
 	/** Strength of the motion blur (the engine's default is 0.5) and its longest streak, in percent of the screen width */
 	UPROPERTY(Config, EditAnywhere, Category = "Camera")

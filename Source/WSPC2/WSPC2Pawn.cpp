@@ -258,6 +258,7 @@ void AWSPC2Pawn::UpdateSpeedCamera(float Delta)
 	BackSpringArm->TargetArmLength = Tuning->ChaseDistance + Tuning->ChaseStretchAtSpeed * CameraSpeedAlpha;
 	BackSpringArm->SocketOffset.Z = Tuning->ChaseHeight;
 	BackSpringArm->CameraLagSpeed = Tuning->ChaseLagSpeed;
+	BackCamera->SetRelativeRotation(FRotator(-Tuning->ChaseLookDownDeg, 0.0f, 0.0f));
 
 	for (UCameraComponent* Camera : { BackCamera, FrontCamera })
 	{
@@ -363,12 +364,90 @@ void AWSPC2Pawn::Tick(float Delta)
 	}
 
 	UpdateSpeedCamera(Delta);
+	UpdateChaseOrbit(Delta);
+	ApplyDriveAssists(Delta);
+}
 
-	// realign the camera yaw to face front
-	float CameraYaw = BackSpringArm->GetRelativeRotation().Yaw;
-	CameraYaw = FMath::FInterpTo(CameraYaw, 0.0f, Delta, 1.0f);
+void AWSPC2Pawn::AddChaseLook(const FVector2D& DeltaDegrees)
+{
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	ChaseOrbitYaw = FRotator::NormalizeAxis(ChaseOrbitYaw + DeltaDegrees.X);
+	ChaseOrbitPitch = FMath::Clamp(ChaseOrbitPitch + DeltaDegrees.Y, Tuning->ChaseOrbitPitchMin, Tuning->ChaseOrbitPitchMax);
+	ChaseLookIdle = 0.0f;
+}
 
-	BackSpringArm->SetRelativeRotation(FRotator(0.0f, CameraYaw, 0.0f));
+void AWSPC2Pawn::UpdateChaseOrbit(float Delta)
+{
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	ChaseLookIdle += Delta;
+
+	// left alone while the car moves, the camera swings back behind it (the short way round)
+	if (ChaseLookIdle > Tuning->ChaseRecenterDelay && GetSpeedKmh() > 5.0f)
+	{
+		const float Alpha = 1.0f - FMath::Exp(-Tuning->ChaseRecenterRate * Delta);
+		ChaseOrbitYaw -= ChaseOrbitYaw * Alpha;
+		ChaseOrbitPitch -= ChaseOrbitPitch * Alpha;
+	}
+
+	BackSpringArm->SetRelativeRotation(FRotator(-ChaseOrbitPitch, ChaseOrbitYaw, 0.0f));
+}
+
+void AWSPC2Pawn::ApplyDriveAssists(float Delta)
+{
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	UPrimitiveComponent* Body = GetMesh();
+	if (!Body || !Body->IsSimulatingPhysics() || !ChaosVehicleMovement)
+	{
+		return;
+	}
+
+	const FVector Velocity = GetVelocity();
+	const float SpeedKmh = Velocity.Size() * 0.036f;
+	const bool bForward = FVector::DotProduct(Velocity, GetActorForwardVector()) > 0.0f;
+	// UChaosVehicleMovementComponent::IsMovingOnGround stays false on these cars: count the wheels on the road instead
+	int32 WheelsDown = 0;
+	for (int32 WheelIndex = 0; WheelIndex < ChaosVehicleMovement->WheelSetups.Num(); ++WheelIndex)
+	{
+		WheelsDown += ChaosVehicleMovement->GetWheelState(WheelIndex).bInContact ? 1 : 0;
+	}
+	const bool bOnGround = WheelsDown >= 2;
+
+	// brake assist: a pull against the motion, fading out below 10 km/h so the car settles without a jolt
+	const float Brake = ChaosVehicleMovement->GetBrakeInput();
+	if (Tuning->BrakeAssistG > 0.0f && Brake > 0.01f && bForward && bOnGround && SpeedKmh > 1.0f)
+	{
+		const float Fade = FMath::Clamp(SpeedKmh / 10.0f, 0.0f, 1.0f);
+		const float Accel = 981.0f * Tuning->BrakeAssistG * Brake * Fade;
+		Body->AddForce(-Velocity.GetSafeNormal() * Accel * Body->GetMass());
+	}
+
+	// power oversteer: the rear tyres give up some grip at full throttle, less as the speed rises
+	float RearScale = 1.0f;
+	if (Tuning->RearThrottleGripLoss > 0.0f && bForward)
+	{
+		const float Span = FMath::Max(Tuning->RearThrottleGripLossGoneAboveKmh - Tuning->RearThrottleGripLossFullBelowKmh, 1.0f);
+		const float SpeedFade = 1.0f - FMath::Clamp((SpeedKmh - Tuning->RearThrottleGripLossFullBelowKmh) / Span, 0.0f, 1.0f);
+		// only while turning: on a straight line it would just spin the wheels and slow the launch
+		const float Turning = FMath::Clamp(FMath::Abs(ChaosVehicleMovement->GetSteeringInput()) * 2.0f, 0.0f, 1.0f);
+		RearScale = 1.0f - Tuning->RearThrottleGripLoss * FMath::Clamp(ChaosVehicleMovement->GetThrottleInput(), 0.0f, 1.0f) * SpeedFade * Turning;
+	}
+
+	// a locked rear axle also lets go sideways, so the handbrake swings the tail out
+	if (ChaosVehicleMovement->GetHandbrakeInput())
+	{
+		RearScale *= Tuning->HandbrakeRearGrip;
+	}
+
+	if (FMath::Abs(RearScale - AppliedRearGripScale) > 0.005f)
+	{
+		AppliedRearGripScale = RearScale;
+		const UWSPC2VehicleDamageComponent* Damage = GetVehicleDamage();
+		for (int32 WheelIndex = 2; WheelIndex < FMath::Min(4, ChaosVehicleMovement->WheelSetups.Num()); ++WheelIndex)
+		{
+			const float DamageScale = Damage ? Damage->GetWheelFrictionScale(WheelIndex) : 1.0f;
+			ChaosVehicleMovement->SetWheelFrictionMultiplier(WheelIndex, Tuning->RearFriction * DamageScale * RearScale);
+		}
+	}
 }
 
 void AWSPC2Pawn::Steering(const FInputActionValue& Value)
@@ -582,8 +661,8 @@ void AWSPC2Pawn::DoHandbrakeStop()
 
 void AWSPC2Pawn::DoLookAround(float YawDelta)
 {
-	// rotate the spring arm
-	BackSpringArm->AddLocalRotation(FRotator(0.0f, YawDelta, 0.0f));
+	// the template's look action (right stick X, mouse X, no dead zone) is not used: AWSPC2PlayerController drives the
+	// chase orbit through AddChaseLook, with a dead zone on the stick and pitch as well as yaw
 }
 
 void AWSPC2Pawn::DoToggleCamera()

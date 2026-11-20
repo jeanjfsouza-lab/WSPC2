@@ -94,6 +94,17 @@ class AWSPC2Pawn : public AWheeledVehiclePawn
 	/** Widens the view and lets the chase camera fall back as the car goes faster */
 	void UpdateSpeedCamera(float Delta);
 
+	/** Chase camera orbit (yaw around the car, pitch above its normal height) and its swing back behind the car */
+	void UpdateChaseOrbit(float Delta);
+
+	/** Brake assist and the rear grip lost on power (UWSPC2VehicleTuning::BrakeAssistG, RearThrottleGripLoss) */
+	void ApplyDriveAssists(float Delta);
+
+	float ChaseOrbitYaw = 0.0f;
+	float ChaseOrbitPitch = 0.0f;
+	float ChaseLookIdle = 10.0f;
+	float AppliedRearGripScale = 1.0f;
+
 	/** Smoothed 0..1 speed used by the cameras */
 	float CameraSpeedAlpha = 0.0f;
 
@@ -237,6 +248,9 @@ public:
 	/** Handle look input by input actions or mobile interface */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void DoLookAround(float YawDelta);
+
+	/** Turns the chase camera around the car: X yaw (+ right), Y pitch (+ camera higher), in degrees */
+	void AddChaseLook(const FVector2D& DeltaDegrees);
 
 	/** Handle toggle camera input by input actions or mobile interface */
 	UFUNCTION(BlueprintCallable, Category="Input")
