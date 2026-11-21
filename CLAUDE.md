@@ -28,6 +28,13 @@ Project notes live in the Obsidian vault at `D:\Obsidian Valt\WSPC2`. Read `01 -
 ## Unreal MCP
 `.mcp.json` points at the editor's built-in MCP server (`unreal-mcp`, `http://localhost:8000/mcp`). It only answers while the editor was started with `Abrir Editor com MCP.bat`. Use it to inspect and experiment; anything that must survive a map rebuild goes into the script in `Tools/`.
 
+## Agent board (talking to the other agent)
+Claude Code and Antigravity can work on this repo at the same time. Both load the `agent-board` MCP server (`Tools/agent_board/board_mcp.py`, shared SQLite in `Saved/AgentBoard/board.db`). Claude Code is agent `claude`, Antigravity is `antigravity`.
+- Start of a session: `board_status` (pass `note` with what you are doing), then `read_messages`.
+- Before any UnrealEditor run (editor, commandlet, `build.ps1`, `testdrive.ps1`, `mission.ps1`): `lock` `unreal-editor`; `unlock` when done. If DENIED, wait or ask with `post_message`.
+- Before editing a file or map the other agent may touch: `lock` `file:<path>` or `map:<name>`. Before commit/push: `lock` `git`.
+- When you finish something the other agent should know about: `post_message`. Hand work over with `add_task` + `assignee`.
+
 ## Layout
 - `Source/WSPC2` — game module (`AWSPC2SportsCar` is the patrol car despite the name)
 - `Tools/city`, `Tools/citymap`, `Tools/testtrack` — map pipelines (Blender + Python + Unreal)

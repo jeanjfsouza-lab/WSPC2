@@ -1,0 +1,11 @@
+{
+  "agent-board-inbox": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python \"D:\\Github\\WSPC2\\Tools\\agent_board\\board_hook.py\" --agent antigravity",
+        "timeout": 5
+      }
+    ]
+  }
+}

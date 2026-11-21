@@ -3,6 +3,11 @@
     "unreal-mcp": {
       "type": "http",
       "url": "http://localhost:8000/mcp"
+    },
+    "agent-board": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["D:/Github/WSPC2/Tools/agent_board/board_mcp.py", "--agent", "claude"]
     }
   }
 }
