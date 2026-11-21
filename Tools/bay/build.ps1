@@ -50,7 +50,7 @@ if (Test-Path $log) {
     }
 }
 $path = (Join-Path $PSScriptRoot $Script) -replace '\\', '/'
-$tag = @{ "build_bay" = "BAY"; "merge_towers" = "TOWERS"; "unit_faces" = "FACES" }[$name]
+$tag = @{ "build_bay" = "BAY"; "merge_towers" = "TOWERS"; "unit_faces" = "FACES"; "extra_units" = "EXTRA" }[$name]
 if (-not $tag) { $tag = "BAY" }
 if (-not (Test-Path $path)) { Write-Output "BUILD no such script: $path"; exit 1 }
 

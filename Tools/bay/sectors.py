@@ -5353,7 +5353,6 @@ SECTORS = {
                       ("terrace_sw", (1703.0, 1487.0), (1760.0, 1562.0)), ("terrace_ne", (1829.0, 1645.0), (1772.0, 1580.0))]},
 }
 
-
 # ---- the campaign's named places (2026-11-18) -------------------------------------------------------------------
 # The campaign (ASSETS TO USE/bay_city_3d) names places: a courthouse, two hospitals, two banks, a penitentiary, an
 # airport, a power plant, a fire station. Each stands where the script's own coordinates fall on the Bay map
@@ -6126,3 +6125,18 @@ def levels(name, net=None, seams=True):
     profiles = [p if len(p) > 1 else [p[0], (p[0][0] + 0.5, p[0][1], p[0][2])] for p in profiles]
     _LEVELS[key] = list(held or []) + [{"profile": profiles}] + ([{"profile": seam_rows, "pin": True}] if seam_rows else [])
     return _LEVELS[key]
+
+
+# ---- zoning after the campaign model (2026-11-21) ---------------------------------------------------------------
+# The kind of architecture each sector was first built with ("district" above) gives way to the zoning that
+# plan_zones.py reads off the campaign model (zoning.py, written by it): suburbs, Victorian streets, the industrial
+# districts and the harbour, the Oriental quarter. Applied last, once every sector
+# (also the edge strips made above) is in SECTORS. "drawn_district" keeps the first kind, which plan_zones.py reads.
+try:
+    from zoning import ZONES
+except ImportError:
+    ZONES = {}
+for _name, _sector in SECTORS.items():
+    _sector["drawn_district"] = _sector["district"]
+    if _name in ZONES:
+        _sector["district"] = ZONES[_name]

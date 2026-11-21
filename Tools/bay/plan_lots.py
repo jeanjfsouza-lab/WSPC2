@@ -153,12 +153,56 @@ DISTRICTS = {
     "estate": {"tiers": [{"units": ESTATE_BLOCKS, "street": 1.0, "avenue": 1.0, "max": 10}],
                "corner": {"street": 0, "avenue": 0}, "corner_m": 0.0, "street_depth": 64.0, "interior": False,
                "gap_m": (18.0, 30.0), "setback_m": 9.0, "yards": True},
+    # The districts of the zoning after the campaign model (plan_zones.py, 2026-11-21). Their models come from
+    # extra_units.json (extra_units.py): "@kind" in a tier stands for every unit of that kind. The houses are
+    # optional (a git-ignored folder): a district left with no models of its own builds as its "fallback".
+    # suburb: detached houses on their own lots, set back behind a front lawn, a side yard between neighbours;
+    # a corner shop or a garage where an avenue passes
+    "suburb": {"tiers": [{"units": ["@house"], "street": 1.0, "avenue": 0.75, "max": 8},
+                         {"units": ["SM_BayWarehouse_Shop", "SM_BayWarehouse_Shop_B"], "street": 0.0, "avenue": 0.25, "max": 2}],
+               "corner": {"street": 0, "avenue": 1}, "corner_m": 0.0, "street_depth": 30.0, "interior": False,
+               "gap_m": (4.0, 9.0), "setback_m": 6.0, "yards": True, "fallback": "estate"},
+    # victorian: the old residential flats near the centre (West Oakland): narrow Victorian houses close together,
+    # cottages among them, walk-up rows on the avenues
+    "victorian": {"tiers": [{"units": ["@victorian"], "street": 0.60, "avenue": 0.15, "max": 30},
+                            {"units": ["@house_narrow"], "street": 0.25, "avenue": 0.0, "max": 8},
+                            {"units": ROWS, "street": 0.15, "avenue": 0.60, "max": 40},
+                            {"units": SMALL_MIDRISES, "street": 0.0, "avenue": 0.25, "max": 2}],
+                  "corner": {"street": 0, "avenue": 2}, "corner_m": 20.0, "street_depth": 30.0, "interior": False,
+                  "gap_m": (0.8, 2.2), "setback_m": 3.0, "yards": True, "fallback": "port"},
+    # industrial: warehouses, sheds and old factory halls with a yard or a driveway between them; the inside of a
+    # big block is built too (a second row reached by its own lane), what is left is paved yard
+    "industrial": {"tiers": [{"units": ["@warehouse"], "street": 0.9, "avenue": 0.75, "max": 6},
+                             {"units": ROWS, "street": 0.1, "avenue": 0.25, "max": 6}],
+                   "corner": {"street": 0, "avenue": 0}, "corner_m": 0.0, "street_depth": 80.0, "interior": True,
+                   "gap_m": (2.5, 7.0), "setback_m": 2.0, "fallback": "port"},
+    # chinatown: the Oriental quarter of the campaign (Op 09): walk-up rows wall to wall on every front, more
+    # mid-rises than the old port district, mid-rises on the corners, paved courts behind
+    "chinatown": {"tiers": [{"units": SMALL_MIDRISES, "street": 0.25, "avenue": 0.5, "max": 3},
+                            {"units": ROWS, "street": 0.75, "avenue": 0.5, "max": 40}],
+                  "corner": {"street": 0, "avenue": 0}, "corner_m": 30.0, "street_depth": 40.0, "interior": False},
 }
+NARROW_HOUSE_M = 10.0       # "@house_narrow": a house whose frontage is at most this wide (a cottage)
+
+
+def expand(names, units):
+    """A tier's model names with "@kind" turned into every unit of that kind (extra_units.json)."""
+    out = []
+    for n in names:
+        if n == "@house_narrow":
+            out += [u for u in units if units[u].get("kind") == "house"
+                    and min(units[u]["ue_hi"][0] - units[u]["ue_lo"][0], units[u]["ue_hi"][1] - units[u]["ue_lo"][1]) <= NARROW_HOUSE_M]
+        elif n.startswith("@"):
+            out += sorted(u for u in units if units[u].get("kind") == n[1:])
+        else:
+            out.append(n)
+    return out
 
 
 def load_units():
     units = {}
-    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(DATA, "tower_units.json")):
+    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(DATA, "tower_units.json"),
+                 os.path.join(DATA, "extra_units.json")):
         if os.path.exists(path):
             with open(path) as f:
                 for u in json.load(f):
@@ -216,9 +260,13 @@ def main():
     faces = load_json("unit_faces.json") if os.path.exists(faces_path) else {}
     rng = random.Random(SEED + sum(ord(c) for c in name))
     district = DISTRICTS[sector["district"]]
+    first_tier = expand(district["tiers"][0]["units"], units)
+    if district.get("fallback") and not any(n in units for n in first_tier):
+        print("LOTS %s: no %s models in the project; building it as %s" % (name, sector["district"], district["fallback"]))
+        district = DISTRICTS[district["fallback"]]
     tiers = []
     for t in district["tiers"]:
-        tiers.append(dict(t, units=[units[n] for n in t["units"] if n in units]))
+        tiers.append(dict(t, units=[units[n] for n in expand(t["units"], units) if n in units]))
     if not any(t["units"] for t in tiers):
         print("LOTS %s: no merged building units found" % name)
         return

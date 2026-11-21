@@ -63,10 +63,12 @@ if (-not $Sectors) { Write-Output "MAKE give -Sectors `"A,B`" or -Check"; exit 1
 foreach ($s in $Sectors.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }) {
     python -P "$here/sector_prep.py" $s
     Mesh $s ""
+    $hadYards = Test-Path "Saved/Bay/sectors/$s/yards.json"
     if (-not $KeepLots) { python -P "$here/plan_lots.py" $s }
     $yards = Test-Path "Saved/Bay/sectors/$s/yards.json"
-    if ($yards -and -not $KeepLots) { Mesh $s "" | Where-Object { $_ -notmatch "^SECTOR" } }
-    if ($yards -or $KeepLots) { python -P "$here/seat_lots.py" $s }
+    # the ground again when gardens came or went (a sector whose kind of district changed loses or gains them)
+    if (($yards -or $hadYards) -and -not $KeepLots) { Mesh $s "" | Where-Object { $_ -notmatch "^SECTOR" } }
+    if ($yards -or $hadYards -or $KeepLots) { python -P "$here/seat_lots.py" $s }
     python -P "$here/preview_sector.py" $s 3 | Out-Null
     python -P "$here/plan_props.py" $s
     python -P "$here/plan_views.py" $s | Select-Object -Last 1

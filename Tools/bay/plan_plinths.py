@@ -39,7 +39,8 @@ SIDES = ("-x", "+x", "-y", "+y")
 
 def load_units():
     units = {}
-    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(DATA, "tower_units.json")):
+    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(DATA, "tower_units.json"),
+                 os.path.join(DATA, "extra_units.json")):
         if os.path.exists(path):
             with open(path) as f:
                 for u in json.load(f):

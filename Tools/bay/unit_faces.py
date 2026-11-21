@@ -4,6 +4,7 @@
   (or: .\\Tools\\bay\\build.ps1 -Script unit_faces.py -Commandlet)
 
 Input:  Saved/CityMap/building_units.json, Saved/Bay/tower_units.json   the merged buildings and their meshes
+        Saved/Bay/extra_units.json   the houses and warehouses of the newer districts (extra_units.py), optional
 Output: Saved/Bay/unit_faces.json   {unit name: {"+x": n, "-x": n, "+y": n, "-y": n, "up": n, "polygons": n}}
         n = how many of the model's polygons face that way (model axes, Unreal units: +y is the model's "south").
 
@@ -28,7 +29,8 @@ def log(text):
 
 def main():
     units = []
-    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(PROJECT, "Saved", "Bay", "tower_units.json")):
+    for path in (os.path.join(PROJECT, "Saved", "CityMap", "building_units.json"), os.path.join(PROJECT, "Saved", "Bay", "tower_units.json"),
+                 os.path.join(PROJECT, "Saved", "Bay", "extra_units.json")):
         if os.path.exists(path):
             with open(path) as f:
                 units += json.load(f)

@@ -71,6 +71,7 @@ TREES = ["/Game/CityPark/Meshes/Flora/Trees/SM_Elm%02d" % i for i in range(7, 13
 LAMP_SPACING_M = 32.0
 TREE_SPACING_M = 13.0
 METER_SPACING_M = 6.4       # one parking bay
+NO_METER_DISTRICTS = ("suburb", "victorian", "industrial", "estate")   # free kerbside parking: no meters
 BOLLARD_SPACING_M = 2.6
 JUNCTION_CLEAR_M = 9.0      # nothing but signals this close to where a junction begins
 PARK_TREE_EVERY_M2 = 75.0   # one tree for this much lawn
@@ -276,7 +277,7 @@ def main():
                     count["tree"] = count.get("tree", 0) + 1
                 s += TREE_SPACING_M * rng.uniform(0.9, 1.15)
             # parking meters beside the parking bays of a street
-            if r.cls == "street":
+            if r.cls == "street" and SECTORS[name].get("district") not in NO_METER_DISTRICTS:
                 s = start + 2.0
                 while s <= end - 2.0:
                     x, y, z, t, n = on_sidewalk(r, s, edge + side * 0.45)
