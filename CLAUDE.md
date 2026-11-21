@@ -23,7 +23,7 @@ Project notes live in the Obsidian vault at `D:\Obsidian Valt\WSPC2`. Read `01 -
 - Target hardware is an RTX 3070 with 8 GB and 16 GB of RAM: use Nanite, instancing and light fallbacks for anything placed in bulk.
 - Header changes with UCLASS/UPROPERTY/UFUNCTION need the editor closed and a full build.
 - Log through `LogWSPC2`. Test hooks are command-line flags named `-WSPC2...`.
-- The city is an original layout; no real brands, no layouts from existing games.
+- The city is an original layout; no layouts from existing games.
 
 ## Unreal MCP
 `.mcp.json` points at the editor's built-in MCP server (`unreal-mcp`, `http://localhost:8000/mcp`). It only answers while the editor was started with `Abrir Editor com MCP.bat`. Use it to inspect and experiment; anything that must survive a map rebuild goes into the script in `Tools/`.
