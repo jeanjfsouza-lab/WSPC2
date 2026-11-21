@@ -9,9 +9,9 @@ Runs one of the Tools/bay editor scripts in the headless Unreal editor. By defau
 -Commandlet runs the script without the editor's windows and renderer (for scripts that only read assets).
 -NullRHI runs the full editor without a video device: for the stages that place things (sectors, buildings,
 props) when the video driver is unusable. Not for "ground", "sea", "light" or "materials", which need it.
--Map is the map the editor opens when it starts (default the Bay's own). Without it the editor opens the
-project's startup map first, the whole first city (WSPC2_Metro): 45 s and a few GB for nothing, and on
-2026-11-14 an editor crashed while loading it. -Map "" keeps the project's startup map.
+-Map is the map the editor opens when it starts. Default: the engine's empty Entry map, because build_bay.py
+opens the maps it needs itself: since the Bay was split into district sublevels (2026-11-20) it loads only the
+sublevels a build changes, and opening the Bay's persistent map first would load all of them for nothing.
 -Surfaces runs Tools/bay/apply_bay_surfaces.py afterwards (grip per surface, Bay meshes only); use it with any build that
 includes the "sectors" stage.
 
@@ -33,7 +33,7 @@ param(
     [switch]$Surfaces,
     [switch]$Commandlet,
     [switch]$NullRHI,
-    [string]$Map = "/Game/Bay/Maps/WSPC2_Bay"
+    [string]$Map = "/Engine/Maps/Entry"
 )
 
 $project = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -64,6 +64,11 @@ while ($true) {
         exit 2
     }
     Start-Sleep -Seconds 10
+}
+
+# which district sublevel each sector and structure goes to (build_bay.py reads Saved/Bay/levels.json)
+if ($name -eq "build_bay") {
+    python -P (Join-Path $PSScriptRoot "plan_levels.py") | Select-Object -Last 1
 }
 
 $env:BAY_STAGES = $Stages

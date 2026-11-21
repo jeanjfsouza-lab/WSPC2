@@ -32,8 +32,20 @@ Stages. Each owns its outliner folders and only removes and rebuilds what is its
   review    creates /Game/Bay/Review/BP_BayReviewGameMode, the game mode without a car that tour.ps1 uses
   inspect   builds nothing: logs the parameters of the materials listed in INSPECT, to plan new instances
 
-Reads   Saved/Bay/sectors/*/, Saved/Bay/start.json (optional: {"location": [x, y, z] in cm, "yaw": deg})
-Writes  /Game/Bay/** and the map. Logs lines starting with BAY.
+  split     once: moves the actors of the single-level map into one sublevel per district (Saved/Bay/levels.json,
+            from plan_levels.py), all always loaded, and saves them; nothing else is built in that run
+
+Sublevels (2026-11-20). The map is split by district, so a build opens and saves only what it changes instead of
+all 18 000 actors: the persistent map /Game/Bay/Maps/WSPC2_Bay holds the landscape, sea, light, player start and
+training ground ("ground", "sea", "light", "training", "review"); /Game/Bay/Maps/Districts/WSPC2_Bay_<district>
+holds each district's sectors, buildings, props and structures ("sectors", "buildings", "props", "structures"),
+and .._Country the trees of the hills ("country"). Those stages load only the sublevels of the sectors and
+structures they rebuild, straight as maps of their own. A sublevel made for the first time is added to the
+persistent map afterwards. Before the split (no /Game/Bay/Maps/Districts yet) everything goes into the one map.
+
+Reads   Saved/Bay/sectors/*/, Saved/Bay/levels.json (plan_levels.py; build.ps1 runs it), Saved/Bay/start.json
+        (optional: {"location": [x, y, z] in cm, "yaw": deg})
+Writes  /Game/Bay/** and the maps. Logs lines starting with BAY.
 After a rebuild run Tools/surfaces/apply_surfaces.py so the surfaces get their grip back (it must list
 /Game/Bay/Generated among its mesh folders).
 """
@@ -202,12 +214,17 @@ def stages():
     return [s.strip() for s in wanted.split(",") if s.strip()] or ["sectors", "sea", "light"]
 
 
+# while one sublevel is built, the sectors and structures that belong to it (None: no limit)
+ONLY_SECTORS = None
+ONLY_STRUCTURES = None
+
+
 def sector_names():
     wanted = [s.strip() for s in os.environ.get("BAY_SECTORS", "").split(",") if s.strip()]
     folder = os.path.join(DATA, "sectors")
     found = sorted(n for n in os.listdir(folder) if os.path.exists(os.path.join(folder, n, n + "_Ground.glb"))) \
         if os.path.isdir(folder) else []
-    return [n for n in found if not wanted or n in wanted]
+    return [n for n in found if (not wanted or n in wanted) and (ONLY_SECTORS is None or n in ONLY_SECTORS)]
 
 
 def instance(name, parent_path):
@@ -1152,7 +1169,7 @@ def structure_names():
     folder = os.path.join(DATA, "structures")
     found = sorted(n for n in os.listdir(folder) if os.path.exists(os.path.join(folder, n, n + ".glb"))) \
         if os.path.isdir(folder) else []
-    return [n for n in found if not wanted or n in wanted]
+    return [n for n in found if (not wanted or n in wanted) and (ONLY_STRUCTURES is None or n in ONLY_STRUCTURES)]
 
 
 def build_structures(world, actors):
@@ -1305,47 +1322,77 @@ def inspect_materials():
             log("inspect   %s: %s" % (kind, ", ".join(names)))
 
 
-def main():
-    todo = stages()
-    levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-    actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    if todo == ["inspect"]:
-        inspect_materials()
-        return
-    if todo == ["lawn"]:
-        # on its own, before any map is loaded, and in a commandlet (build.ps1 -Stages lawn -Commandlet): giving
-        # MI_Bay_Grass another parent while the open map draws lawns with it stops the editor on an assertion of the
-        # renderer ("UniformExpressionCache should be up to date", 2026-11-19)
-        lawn_master()
-        return
-    if assets.does_asset_exist(MAP):
-        if not levels.load_level(MAP):
-            raise RuntimeError("could not load " + MAP)
-    elif not levels.new_level(MAP):
-        raise RuntimeError("could not create " + MAP)
-    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-    game_mode = assets.load_blueprint_class(GAME_MODE)
-    if game_mode:
-        world.get_world_settings().set_editor_property("default_game_mode", game_mode)
-    if "inspect" in todo:
-        inspect_materials()
-    if "review" in todo:
-        build_review_mode()
-    # sectors that no longer exist (BAY_REMOVE, a comma list): their actors and their imported meshes go
-    for gone in [s.strip() for s in os.environ.get("BAY_REMOVE", "").split(",") if s.strip()]:
-        removed = remove_actors(actors, ["Bay/Sectors/%s" % gone, "Bay/Buildings/%s" % gone, "Bay/Props/%s" % gone])
-        if assets.does_directory_exist("%s/%s" % (GENERATED, gone)):
-            assets.delete_directory("%s/%s" % (GENERATED, gone))
-        log("sector %s removed from the map: %d actors" % (gone, removed))
-    if "materials" in todo:
-        build_materials()
-        build_paint_materials()
-        wild_master()
-        lawn = assets.load_asset("%s/%s" % (BAY_MATERIALS, LAWN_INSTANCE))
-        if not lawn or not lawn.get_editor_property("parent") or lawn.get_editor_property("parent").get_name() != LAWN_MASTER:
-            log("lawn: %s is not an instance of %s yet; run build.ps1 -Stages lawn -Commandlet" % (LAWN_INSTANCE, LAWN_MASTER))
-    if "propassets" in todo:
-        build_prop_assets()
+DISTRICTS = "/Game/Bay/Maps/Districts"
+DISTRICT_STAGES = ("sectors", "buildings", "props", "structures", "country")
+
+
+def district_of_name(name):
+    letters = ""
+    for ch in name:
+        if not ch.isalpha():
+            break
+        letters += ch
+    return letters
+
+
+def read_levels():
+    path = os.path.join(DATA, "levels.json")
+    if not os.path.exists(path):
+        raise RuntimeError("no %s: run python -P Tools/bay/plan_levels.py (build.ps1 does)" % path)
+    with open(path) as f:
+        return json.load(f)
+
+
+def open_map(levels, path, create=False):
+    if assets.does_asset_exist(path):
+        if not levels.load_level(path):
+            raise RuntimeError("could not load " + path)
+    elif create:
+        if not levels.new_level(path):
+            raise RuntimeError("could not create " + path)
+    else:
+        raise RuntimeError("missing map " + path)
+    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+
+
+def save_map(levels, actors, path, todo):
+    if not levels.save_current_level():
+        raise RuntimeError("could not save " + path)
+    log("saved %s with %d actors (stages: %s)" % (path, len(actors.get_all_level_actors()), ", ".join(todo)))
+
+
+def split_map(levels, actors, info):
+    """Once: the single-level map's district actors into always-loaded sublevels, by outliner folder."""
+    world = open_map(levels, MAP)
+    by_level, kept = {}, 0
+    for actor in actors.get_all_level_actors():
+        parts = str(actor.get_folder_path()).split("/")
+        district = None
+        if len(parts) >= 3 and parts[0] == "Bay":
+            kind, name = parts[1], parts[2]
+            if kind in ("Sectors", "Buildings", "Props"):
+                district = info["sectors"].get(name) or district_of_name(name)
+            elif kind == "Structures":
+                district = info["structures"].get(name)
+            elif kind == "Country":
+                district = "Country"
+        if district:
+            by_level.setdefault(district, []).append(actor)
+        else:
+            kept += 1
+    log("split: %d actors to move into %d sublevels, %d stay" % (sum(len(v) for v in by_level.values()), len(by_level), kept))
+    for district in sorted(by_level):
+        path = info["levels"].get(district, "%s/WSPC2_Bay_%s" % (DISTRICTS, district))
+        streaming = unreal.EditorLevelUtils.create_new_streaming_level(unreal.LevelStreamingAlwaysLoaded, path, False)
+        if not streaming:
+            raise RuntimeError("could not create the sublevel " + path)
+        moved = unreal.EditorLevelUtils.move_actors_to_level(by_level[district], streaming, False, False)
+        log("split: %s <- %d of %d actors" % (path, moved, len(by_level[district])))
+    unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, False)
+    log("split: done; persistent map keeps %d actors, %d sublevels saved" % (kept, len(by_level)))
+
+
+def run_stages(world, actors, todo):
     if "ground" in todo:
         build_ground(world, actors)
     if "sectors" in todo:
@@ -1364,9 +1411,106 @@ def main():
         build_training(world, actors)
     if "light" in todo:
         build_light(world, actors)
-    if not levels.save_current_level():
-        raise RuntimeError("could not save the level")
-    log("saved %s with %d actors (stages: %s)" % (MAP, len(actors.get_all_level_actors()), ", ".join(todo)))
+
+
+def remove_sectors(actors, names):
+    """Sectors that no longer exist (BAY_REMOVE): their actors and their imported meshes go."""
+    for gone in names:
+        removed = remove_actors(actors, ["Bay/Sectors/%s" % gone, "Bay/Buildings/%s" % gone, "Bay/Props/%s" % gone])
+        if assets.does_directory_exist("%s/%s" % (GENERATED, gone)):
+            assets.delete_directory("%s/%s" % (GENERATED, gone))
+        log("sector %s removed from the map: %d actors" % (gone, removed))
+
+
+def main():
+    global ONLY_SECTORS, ONLY_STRUCTURES
+    todo = stages()
+    levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+    actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    if todo == ["inspect"]:
+        inspect_materials()
+        return
+    if todo == ["lawn"]:
+        # on its own, before any map is loaded, and in a commandlet (build.ps1 -Stages lawn -Commandlet): giving
+        # MI_Bay_Grass another parent while the open map draws lawns with it stops the editor on an assertion of the
+        # renderer ("UniformExpressionCache should be up to date", 2026-11-19)
+        lawn_master()
+        return
+    if todo == ["split"]:
+        split_map(levels, actors, read_levels())
+        return
+    gone = [s.strip() for s in os.environ.get("BAY_REMOVE", "").split(",") if s.strip()]
+    split = assets.does_directory_exist(DISTRICTS)
+    whole = [t for t in todo if t not in DISTRICT_STAGES] if split else todo
+
+    # the persistent map: everything before the split; afterwards only the stages of the whole city
+    if whole or not split:
+        world = open_map(levels, MAP, create=True)
+        game_mode = assets.load_blueprint_class(GAME_MODE)
+        if game_mode:
+            world.get_world_settings().set_editor_property("default_game_mode", game_mode)
+        if "inspect" in todo:
+            inspect_materials()
+        if "review" in todo:
+            build_review_mode()
+        if not split:
+            remove_sectors(actors, gone)
+        if "materials" in todo:
+            build_materials()
+            build_paint_materials()
+            wild_master()
+            lawn = assets.load_asset("%s/%s" % (BAY_MATERIALS, LAWN_INSTANCE))
+            if not lawn or not lawn.get_editor_property("parent") or lawn.get_editor_property("parent").get_name() != LAWN_MASTER:
+                log("lawn: %s is not an instance of %s yet; run build.ps1 -Stages lawn -Commandlet" % (LAWN_INSTANCE, LAWN_MASTER))
+        if "propassets" in todo:
+            build_prop_assets()
+        run_stages(world, actors, whole)
+        save_map(levels, actors, MAP, whole)
+    if not split:
+        return
+
+    # the districts: each sublevel loaded on its own as a map, only the sectors and structures it holds rebuilt
+    info = read_levels()
+    district_todo = [t for t in todo if t in DISTRICT_STAGES]
+    plan = {}
+
+    def entry(district):
+        return plan.setdefault(district, {"sectors": set(), "structures": set()})
+
+    if any(t in district_todo for t in ("sectors", "buildings", "props")):
+        for name in sector_names():
+            entry(info["sectors"].get(name) or district_of_name(name))["sectors"].add(name)
+    for name in gone:
+        entry(info["sectors"].get(name) or district_of_name(name))
+    if "structures" in district_todo:
+        for name in structure_names():
+            district = info["structures"].get(name)
+            if not district:
+                log("structure %s has no district in levels.json (run plan_levels.py): not built" % name)
+                continue
+            entry(district)["structures"].add(name)
+    if "country" in district_todo:
+        entry("Country")
+    made = []
+    for district in sorted(plan):
+        path = info["levels"].get(district, "%s/WSPC2_Bay_%s" % (DISTRICTS, district))
+        if not assets.does_asset_exist(path):
+            made.append(path)
+        world = open_map(levels, path, create=True)
+        ONLY_SECTORS, ONLY_STRUCTURES = plan[district]["sectors"], plan[district]["structures"]
+        remove_sectors(actors, [g for g in gone if (info["sectors"].get(g) or district_of_name(g)) == district])
+        steps = [t for t in district_todo if (t != "country" or district == "Country")
+                 and (t not in ("sectors", "buildings", "props") or ONLY_SECTORS)
+                 and (t != "structures" or ONLY_STRUCTURES)]
+        run_stages(world, actors, steps)
+        save_map(levels, actors, path, steps or ["remove"])
+    ONLY_SECTORS = ONLY_STRUCTURES = None
+    if made:
+        world = open_map(levels, MAP)
+        for path in made:
+            unreal.EditorLevelUtils.add_level_to_world(world, path, unreal.LevelStreamingAlwaysLoaded)
+            log("added the new sublevel %s to %s" % (path, MAP))
+        save_map(levels, actors, MAP, ["sublevels"])
 
 
 try:
