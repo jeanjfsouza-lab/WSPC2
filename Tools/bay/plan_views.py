@@ -123,9 +123,11 @@ def main():
         for label, p, t in views:
             f.write("%s;%.0f,%.0f,%.0f;%.0f,%.0f,%.0f\n" % (label, p[0], p[1], p[2], t[0], t[1], t[2]))
 
-    if junctions:
-        n = junctions[0]
-        e = next(e for e in net["edges"] if e["level"] == 0 and n["id"] in (e["a"], e["b"]))
+    # the start spot: on a ground road out of the first junction that has one (a junction on a structure, such as
+    # the Trevo Sul's elevated ring, has none)
+    ground_starts = [(n, e) for n in junctions for e in net["edges"] if e["level"] == 0 and n["id"] in (e["a"], e["b"])]
+    if ground_starts:
+        n, e = ground_starts[0]
         pts = e["pts"] if e["a"] == n["id"] else e["pts"][::-1]
         p = pts[min(len(pts) - 1, 3)]
         q = pts[min(len(pts) - 1, 5)]

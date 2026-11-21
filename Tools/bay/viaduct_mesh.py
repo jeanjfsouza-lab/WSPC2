@@ -21,6 +21,12 @@ faces outwards. Where the girder's underside comes within FILL_CLEAR_M of the gr
 the road it carries on), the deck stands on a fill between retaining walls; elsewhere on a pier every PIER_EVERY_M
 or so: one column under a narrow deck, two under a cap beam under a wide one, each on a footing below the ground.
 Lamps: one every LAMP_EVERY_M on the barriers, alternating sides.
+
+Junctions on a structure (2026-11-20, the Trevo Sul's elevated ring and the ramps that join it): the other level-1
+roads that share an end with this one are its joiners. Where a joiner's carriageway runs, this deck's barrier opens
+(lies flat on the deck), so traffic passes from one deck to the other; where this deck lies on a wider joiner's
+deck, its surface sits JOIN_DROP_M lower, so the two never share a plane (the wider one's lanes show through).
+No lamp stands where the barrier is open.
 """
 import json
 import math
@@ -51,6 +57,7 @@ FOOTING_M = 1.5             # piers and walls go this far into the ground
 CAP_M = 0.9                 # cap beam under a wide deck
 LAMP_EVERY_M = 36.0
 LAMP = "/Game/Prop/Kit_StreetLamp_C/Mesh/streetLampC"
+JOIN_DROP_M = 0.04          # a deck lying on a wider joining deck sits this much lower
 
 
 def runs(ss):
@@ -133,11 +140,40 @@ def main():
             solids["%s_%02d" % (key, i)] = solid
 
     # ---- deck: barriers, sidewalks, kerbs, carriageway with its lane lines; a slab under it
+    # ---- the other level-1 roads that meet this one at an end: barrier open on their carriageway, deck lower on theirs
+    ends = {edge["a"], edge["b"]}
+    joiners = [roadgeom.Road(e) for e in net["edges"]
+               if e is not edge and e.get("level", 0) == 1 and ({e["a"], e["b"]} & ends)]
+
+    def dist_to(r, x, y):
+        a, b = r.xy[:-1], r.xy[1:]
+        ab = b - a
+        q = np.array([x, y])
+        t = np.clip(((q - a) * ab).sum(axis=1) / np.maximum((ab ** 2).sum(axis=1), 1e-9), 0.0, 1.0)
+        return float(np.sqrt((((a + ab * t[:, None]) - q) ** 2).sum(axis=1)).min())
+
+    def on_joiner(x, y, extra):
+        """Joiners whose carriageway (half width + extra) covers the point."""
+        return [r for r in joiners if dist_to(r, x, y) < r.half + extra]
+
+    open_cache = {}
+
+    def barrier_open(s, side):
+        key = (round(s, 3), side)
+        if key not in open_cache:
+            x, y, _ = at(s, side * (d_side + BARRIER_W * 0.5), 0.0)
+            open_cache[key] = bool(on_joiner(x, y, -0.3))
+        return open_cache[key]
+
+    def drop(s, d):
+        x, y, _ = at(s, d, 0.0)
+        return -JOIN_DROP_M if any(r.half > half + 0.01 for r in on_joiner(x, y, BARRIER_W)) else 0.0
+
     lane_w = 2.0 * half / max(lanes, 1)
     marks = []                                            # (d, kind) of the lane lines, left to right across
     for k in range(1, lanes):
         d = half - k * lane_w
-        if lanes % 2 == 0 and k == lanes // 2 and edge["cls"] != "ramp":
+        if lanes % 2 == 0 and k == lanes // 2 and edge["cls"] not in ("ramp", "ring"):
             marks.append((d, "yellow"))
         else:
             marks.append((d, "dash"))
@@ -165,7 +201,18 @@ def main():
             return slot
         return "PaintWhite" if ((s0 + s1) / 2.0 - 5.0) % 12.0 < 3.0 else "Road"
 
-    sweep("Deck", grid, lambda s: [at(s, d, dz) for d, dz, _ in profile], deck_slot)
+    last = len(profile) - 1
+    barrier_idx = {1: 1.0, 2: 1.0, last - 1: -1.0, last - 2: -1.0}   # the barrier's top corners, by side
+
+    def deck_section(s):
+        pts = []
+        for i, (d, dz, _) in enumerate(profile):
+            if i in barrier_idx and joiners and barrier_open(s, barrier_idx[i]):
+                dz = 0.0
+            pts.append(at(s, d, dz + (drop(s, d) if joiners and dz >= 0.0 else 0.0)))
+        return pts
+
+    sweep("Deck", grid, deck_section, deck_slot)
 
     # ---- girder under the slab where the deck stands on piers
     gw = max(1.2, d_out - 1.2)
@@ -245,6 +292,9 @@ def main():
     for side, shift in ((1.0, 0.0), (-1.0, LAMP_EVERY_M / 2.0)):
         s = 9.0 + shift
         while s < length - 6.0:
+            if joiners and barrier_open(s, side):
+                s += LAMP_EVERY_M
+                continue
             x, y, z = at(s, side * (d_side + BARRIER_W * 0.5), BARRIER_H)
             _, _, n = road.at(s)
             yaw = math.degrees(math.atan2(side * n[1], -side * n[0])) % 360.0
@@ -276,7 +326,9 @@ def main():
     with open(os.path.join(out_dir, "viaduct.json"), "w") as f:
         json.dump(info, f, indent=1)
     print("VIADUCT %s: %.0f m, fills %.0f m and %.0f m at the ends, %d piers, least room under the girder %.2f m; "
-          "%d meshes, %d faces, %d lamps" % (name, length, a_end, length - b_end, len(piers), least, len(objects), faces, len(lamps)))
+          "%d meshes, %d faces, %d lamps; %d joining structures, barrier open at %d stations"
+          % (name, length, a_end, length - b_end, len(piers), least, len(objects), faces, len(lamps), len(joiners),
+             sum(1 for v in open_cache.values() if v)))
     print("VIADUCT %s: wrote %s" % (name, glb))
 
 

@@ -23,9 +23,9 @@ from common import CURB_M, SECTIONS
 CURB_W = 0.18               # width of the kerb stone seen from above
 STEP_M = 6.0                # longest stretch of centre line between two cross-sections
 ARC_STEP_M = 2.0            # the same on curves
-SIMPLIFY = {"street": 2.6, "alley": 2.6, "arterial": 3.0, "freeway": 2.5, "ramp": 0.5, "bridge": 2.0, "tunnel": 2.5}
-BEND_RADIUS = {"street": 14.0, "alley": 9.0, "arterial": 55.0, "freeway": 260.0, "ramp": 45.0, "bridge": 160.0, "tunnel": 70.0}
-CORNER_RADIUS = {"street": 5.0, "alley": 3.0, "arterial": 8.0, "freeway": 20.0, "ramp": 14.0, "bridge": 8.0, "tunnel": 8.0}
+SIMPLIFY = {"street": 2.6, "alley": 2.6, "arterial": 3.0, "freeway": 2.5, "ramp": 0.5, "ring": 0.5, "bridge": 2.0, "tunnel": 2.5}
+BEND_RADIUS = {"street": 14.0, "alley": 9.0, "arterial": 55.0, "freeway": 260.0, "ramp": 45.0, "ring": 45.0, "bridge": 160.0, "tunnel": 70.0}
+CORNER_RADIUS = {"street": 5.0, "alley": 3.0, "arterial": 8.0, "freeway": 20.0, "ramp": 14.0, "ring": 14.0, "bridge": 8.0, "tunnel": 8.0}
 BULB_RADIUS = 10.0          # turning circle at the end of a dead-end street
 CROSSWALK_M = 3.0
 PRECEDENCE = ["yellow", "white", "median", "road", "curb", "sidewalk"]
@@ -344,7 +344,7 @@ def markings(road, degree_a, degree_b, through=(False, False)):
                 out += [("white", q) for q in line(road, start, end, side * (inner + k * lane_w), 0.12, (3.0, 9.0))]
             out += [("white", q) for q in line(road, start, end, side * (inner + (lanes // 2) * lane_w), 0.15)]
         return out
-    if cls == "ramp":
+    if cls in ("ramp", "ring"):
         out += [("yellow", q) for q in line(road, start, end, half - 1.2, 0.12)]
         out += [("white", q) for q in line(road, start, end, -(half - 1.2), 0.12)]
         return out

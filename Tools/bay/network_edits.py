@@ -65,23 +65,69 @@ remove((2832, -908), "marks 1: east street leaves from the crossing instead")
 add([(2817, -866), (2850, -888), (2872, -893), (2905, -915)], "marks 1: east street from the crossing", kind="street", width=22.0)
 
 # ---------------------------------------------------------------------------------------------------------
-# User marks 1: Trevo Rodoviario Sul. The label hides where the triangle's legs meet the highway. Rebuilt as
-# drawn: the highway straight through, a ramp ring around it (north side serves westbound, south side
-# eastbound), two ramp overpasses across the highway, and the two legs up to the tunnel road.
+# Trevo Rodoviario Sul, redone on 2026-11-20 as the campaign model has it (bay_city_3d/dados/malha_urbana.glb,
+# measured from above and carried over with plan_campaign.to_bay): the user asked for this area to be identical to
+# it. A round elevated roundabout, 118 m in radius on its centre line, centred on the highway and 11.1 m above it;
+# the highway runs straight through underneath at grade. Where the ring crosses the highway it is a viaduct
+# (structures "VTS1" west, "VTS2" east); the rest of the ring sits on raised ground. Four slip ramps leave the
+# highway and climb to the ring; from the north the road out of the Tunel do Trevo Sul splits in two legs that
+# reach the ring like a teardrop. (Before: an oval ring with two straight overpasses, from the drawing.)
 # ---------------------------------------------------------------------------------------------------------
+import math as _math
+
+_TS_C, _TS_R, _TS_Z = (-674.3, -1697.5), 118.0, 15.3       # ring centre, radius, height (highway at 4.2 m)
+
+
+def _ts_at(deg):
+    a = _math.radians(deg)
+    return (round(_TS_C[0] + _TS_R * _math.cos(a), 2), round(_TS_C[1] + _TS_R * _math.sin(a), 2))
+
+
+def _ts_arc(a0, a1, step=6.0):
+    n = max(2, int(round(abs(a1 - a0) / step)))
+    return [_ts_at(a0 + (a1 - a0) * k / n) for k in range(n + 1)]
+
+
+def _ts_flat(pts):
+    return [(pts[0][0], pts[0][1], _TS_Z), (pts[-1][0], pts[-1][1], _TS_Z)]
+
+
 clear([(-912, -1652), (-800, -1640), (-700, -1447), (-655, -1447), (-555, -1640), (-423, -1650), (-423, -1832), (-912, -1832)],
       "marks 1: Trevo Sul redrawn")
 add([(-915, -1710), (-785, -1707), (-572, -1700), (-420, -1695)], "Trevo Sul: highway through", kind="avenue", width=60.0, cls="freeway")
-add([(-678, -1465), (-705, -1512), (-760, -1603), (-785, -1650)], "Trevo Sul: west leg", cls="ramp", width=9.0)
-add([(-678, -1465), (-651, -1512), (-597, -1603), (-572, -1650)], "Trevo Sul: east leg", cls="ramp", width=9.0)
-add([(-785, -1650), (-572, -1650)], "Trevo Sul: north side of the ring", cls="ramp", width=9.0)
-add([(-785, -1650), (-835, -1664), (-880, -1686), (-915, -1710)], "Trevo Sul: north-west ramp", cls="ramp", width=9.0)
-add([(-572, -1650), (-505, -1660), (-455, -1677), (-420, -1695)], "Trevo Sul: north-east ramp", cls="ramp", width=9.0)
-add([(-915, -1710), (-872, -1744), (-830, -1765), (-785, -1778)], "Trevo Sul: south-west ramp", cls="ramp", width=9.0)
-add([(-785, -1778), (-730, -1800), (-680, -1810), (-630, -1803), (-572, -1772)], "Trevo Sul: south side of the ring", cls="ramp", width=9.0)
-add([(-572, -1772), (-500, -1742), (-455, -1717), (-420, -1695)], "Trevo Sul: south-east ramp", cls="ramp", width=9.0)
-add([(-785, -1650), (-785, -1778)], "Trevo Sul: west overpass", cls="ramp", width=9.0, level=1, name="Trevo Sul overpass W")
-add([(-572, -1650), (-572, -1772)], "Trevo Sul: east overpass", cls="ramp", width=9.0, level=1, name="Trevo Sul overpass E")
+# The ring is a viaduct all the way round (in the model it stands on its own, the ground low inside it): six pieces
+# between its junctions, structures "VTS1" .. "VTS6". Junction angles as measured on the model.
+_TS_RING = ((30, 64, "VTS3"), (64, 116, "VTS4"), (116, 150, "VTS5"), (150, 210, "VTS1"), (210, 330, "VTS6"), (330, 390, "VTS2"))
+for _a0, _a1, _st in _TS_RING:
+    _pts = _ts_arc(_a0, _a1)
+    add(_pts, "Trevo Sul (campaign model): ring %d-%d deg" % (_a0, _a1), cls="ring", width=11.0, level=1,
+        name="Trevo Sul ring %s" % _st, curve=True, snap=4.0, deck=_ts_flat(_pts))
+
+
+def _ts_climb(label, pts, z0, split):
+    """A road from the ground up to the ring at an even grade: on the ground (level 0) as far as point `split`, a
+    viaduct from there on, where it stands clear of the ground."""
+    run = [0.0]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        run.append(run[-1] + _math.hypot(x1 - x0, y1 - y0))
+    zs = round(z0 + (_TS_Z - z0) * run[split] / run[-1], 2)
+    low, high = pts[:split + 1], pts[split:]
+    add(low, "Trevo Sul (campaign model): %s, on the ground" % label, cls="ramp", width=9.0, curve=True,
+        deck=[(low[0][0], low[0][1], z0), (low[-1][0], low[-1][1], zs)])
+    add(high, "Trevo Sul (campaign model): %s, viaduct" % label, cls="ramp", width=9.0, level=1, curve=True,
+        name="Trevo Sul %s" % label, deck=[(high[0][0], high[0][1], zs), (high[-1][0], high[-1][1], _TS_Z)])
+
+
+# slip ramps from the highway's junctions up to the ring (structures "VTR1" .. "VTR4" for their viaducts)
+_ts_climb("north-west slip ramp", [(-915, -1710), (-897, -1678), (-875, -1662), (-847, -1650), (-813, -1643), _ts_at(150)], 4.27, 2)
+_ts_climb("south-west slip ramp", [(-915, -1710), (-892, -1729), (-875, -1740), (-820, -1757), _ts_at(210)], 4.27, 2)
+_ts_climb("north-east slip ramp", [(-420, -1695), (-440, -1664), (-471, -1650), (-512, -1638), (-547, -1634), _ts_at(30)], 4.17, 2)
+_ts_climb("south-east slip ramp", [(-420, -1695), (-442, -1715), (-480, -1731), (-520, -1747), (-548, -1754), _ts_at(330)], 4.17, 2)
+# the two legs from the tunnel road's mouth, a teardrop down to the ring ("VTL1" west, "VTL2" east)
+_ts_climb("west leg", [(-678, -1465), (-675.1, -1475.4), (-678.4, -1490.6), (-682.2, -1505.7), (-687.1, -1520.8), (-692.4, -1535.9),
+                       (-703.0, -1560.0), _ts_at(116)], 3.87, 3)
+_ts_climb("east leg", [(-678, -1465), (-662.9, -1475.4), (-659.6, -1490.6), (-655.8, -1505.7), (-650.9, -1520.8), (-645.6, -1535.9),
+                       (-635.0, -1560.0), _ts_at(64)], 3.87, 3)
 
 # ---------------------------------------------------------------------------------------------------------
 # User marks 1: Viaduto da Ilha Oeste (white circle). Read as a diamond interchange: the viaduct from the

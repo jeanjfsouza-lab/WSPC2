@@ -27,9 +27,11 @@ Y_TOP = 2500.0 + (250 - FY) / PX_PER_M      # the +2.5 km tick sits at picture r
 
 # colours (R, G, B) used by every picture of the network, by traced kind and by designed class
 ROAD_COLOURS = {"street": (20, 20, 20), "avenue": (170, 0, 200), "bridge": (235, 20, 20), "tunnel": (0, 70, 255),
-                "freeway": (110, 0, 190), "arterial": (215, 0, 150), "alley": (120, 120, 120), "ramp": (0, 150, 215)}
+                "freeway": (110, 0, 190), "arterial": (215, 0, 150), "alley": (120, 120, 120), "ramp": (0, 150, 215),
+                "ring": (0, 190, 170)}
 ROAD_NAMES_PT = {"street": "rua", "avenue": "avenida / rodovia", "bridge": "ponte", "tunnel": "túnel",
-                 "freeway": "rodovia", "arterial": "avenida", "alley": "rua estreita", "ramp": "alça"}
+                 "freeway": "rodovia", "arterial": "avenida", "alley": "rua estreita", "ramp": "alça",
+                 "ring": "rotatória elevada"}
 
 
 # Road classes: how wide each is built and how it may climb.
@@ -42,6 +44,8 @@ SECTIONS = {
     "street":   {"carriage": 12.0, "sidewalk": 3.6, "grade": 0.17, "hold": 0.12, "lanes": 2, "median": 0.0},
     "alley":    {"carriage": 6.0,  "sidewalk": 0.0, "grade": 0.17, "hold": 0.15, "lanes": 1, "median": 0.0},
     "ramp":     {"carriage": 7.0,  "sidewalk": 0.0, "grade": 0.08, "hold": 0.02, "lanes": 1, "median": 0.0},
+    # one-way roundabout of two lanes, no sidewalk (the Trevo Sul's elevated ring, 2026-11-20)
+    "ring":     {"carriage": 11.0, "sidewalk": 0.0, "grade": 0.08, "hold": 0.02, "lanes": 2, "median": 0.0},
     "bridge":   {"carriage": 17.0, "sidewalk": 2.4, "grade": 0.06, "hold": 1.0,  "lanes": 4, "median": 0.0},
     "tunnel":   {"carriage": 17.0, "sidewalk": 0.0, "grade": 0.07, "hold": 1.0,  "lanes": 4, "median": 0.0},
 }

@@ -281,8 +281,21 @@ def strip_ring(road, s0, s1, w):
 VIADUCTS = {
     # Trevo Rodoviario Sul (network_edits, "User marks 1: Trevo Rodoviario Sul"): the two ramp overpasses that carry
     # the ring of ramps across the highway, west and east of the tunnel road's legs
-    "VTS1": {"title": "Trevo Rodoviario Sul - viaduto oeste", "at": (-785.0, -1714.0), "status": "built"},
-    "VTS2": {"title": "Trevo Rodoviario Sul - viaduto leste", "at": (-572.0, -1711.0), "status": "built"},
+    # (2026-11-20: redone as the campaign model has it, an elevated round ring over the highway, its slip ramps and the
+    # two legs from the tunnel road; network_edits "Trevo Sul (campaign model)". VTS1 and VTS2 are the ring's two
+    # pieces over the highway, VTS3..VTS6 the rest of it, VTR* the ramps' viaducts, VTL* the legs')
+    "VTS1": {"title": "Trevo Rodoviario Sul - anel, sobre a rodovia (oeste)", "at": (-792.3, -1697.5), "status": "built"},
+    "VTS2": {"title": "Trevo Rodoviario Sul - anel, sobre a rodovia (leste)", "at": (-556.3, -1697.5), "status": "built"},
+    "VTS3": {"title": "Trevo Rodoviario Sul - anel nordeste", "at": (-593.8, -1611.2), "status": "built"},
+    "VTS4": {"title": "Trevo Rodoviario Sul - anel norte", "at": (-680.2, -1579.7), "status": "built"},
+    "VTS5": {"title": "Trevo Rodoviario Sul - anel noroeste", "at": (-754.8, -1611.2), "status": "built"},
+    "VTS6": {"title": "Trevo Rodoviario Sul - anel sul", "at": (-674.3, -1815.5), "status": "built"},
+    "VTR1": {"title": "Trevo Rodoviario Sul - alca noroeste", "at": (-847.0, -1650.0), "status": "built"},
+    "VTR2": {"title": "Trevo Rodoviario Sul - alca sudoeste", "at": (-848.0, -1748.0), "status": "built"},
+    "VTR3": {"title": "Trevo Rodoviario Sul - alca nordeste", "at": (-512.0, -1638.0), "status": "built"},
+    "VTR4": {"title": "Trevo Rodoviario Sul - alca sudeste", "at": (-520.0, -1747.0), "status": "built"},
+    "VTL1": {"title": "Trevo Rodoviario Sul - perna oeste", "at": (-692.4, -1535.9), "status": "built"},
+    "VTL2": {"title": "Trevo Rodoviario Sul - perna leste", "at": (-645.6, -1535.9), "status": "built"},
     # Ilha Oeste (network_edits, "User marks 1: Viaduto da Ilha Oeste"): the island road over the highway, and the
     # north-west ramp climbing over the north lagoon from the island road to the Ponte Pensil's abutment
     "VIO": {"title": "Viaduto da Ilha Oeste", "at": (-1650.0, 436.0), "status": "built"},
