@@ -38,6 +38,7 @@ Content/Material/
 Content/Crowd/
 # Generated city geometry and map (rebuilt by Tools/city)
 Content/City/Generated/
-# Third-party/prepared vehicle GLBs imported by Tools/vehicles/import_vehicles.py (local only)
+# Third-party/prepared vehicle & scenery GLBs imported by Tools/vehicles and Tools/scenery (local only)
 Content/Vehicles/Imported/
+Content/Scenery/Imported/
 __pycache__/

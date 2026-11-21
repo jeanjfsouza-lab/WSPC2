@@ -1,0 +1,776 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-21",
+  "unreal_root": "/Game/Scenery/Imported",
+  "optional_load": true,
+  "showcase_map": "/Game/Scenery/Imported/Maps/L_SceneryShowcase",
+  "showcase_verification": {
+    "resolution": "1280x720",
+    "fps_min": 115.3,
+    "fps_max": 126.1,
+    "shots_dir": "Saved/SceneryShowcase/shots",
+    "shot_count": 10
+  },
+  "counts": {
+    "base_meshes": 20,
+    "house_variants": 16,
+    "rail_variants": 5,
+    "total_static_meshes": 41,
+    "active_material_instances": 26
+  },
+  "materials": {
+    "nuclear": [
+      {
+        "id": "MI_WSPC2_Nuclear_ConcreteShell",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Nuclear_ConcreteShell",
+        "parent": "/Game/OvergrownFactoryENV/Material/MI_ConcreteGrunge",
+        "role": "Hyperbolic cooling tower shell & containment concrete (BaseLayer_Tiling=0.35, BottomDirtColor)"
+      },
+      {
+        "id": "MI_WSPC2_Nuclear_QuixelConcreteDark",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Nuclear_QuixelConcreteDark",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Wall_Facade_Concrete_New_01/MI_Ind_War_Wall_Facade_Concrete_New_01_A",
+        "role": "Raker columns, basin, reactor buttresses & heavy structural plinths"
+      },
+      {
+        "id": "MI_WSPC2_Nuclear_MetalCladding",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Nuclear_MetalCladding",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Turbine hall corrugated metal siding & control/dome panels"
+      },
+      {
+        "id": "MI_WSPC2_Nuclear_PipeSteel",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Nuclear_PipeSteel",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Clean matte grey industrial steam pipes, vents & crane gantries"
+      }
+    ],
+    "port_crane": [
+      {
+        "id": "MI_WSPC2_PortCrane_OaklandBlueGrey",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_PortCrane_OaklandBlueGrey",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Port STS gantry primary structural painted steel frame"
+      },
+      {
+        "id": "MI_WSPC2_PortCrane_MaritimeOrange",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_PortCrane_MaritimeOrange",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Sheet_Metal_Rusty_01/MI_Ind_War_Sheet_Metal_Rusty_01_A",
+        "role": "STS crane stairs, walkways & upper boom hazard accent metal"
+      },
+      {
+        "id": "MI_WSPC2_PortCrane_SafetyYellow",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_PortCrane_SafetyYellow",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Bogie skirt trims & spreader bar high-visibility accents"
+      },
+      {
+        "id": "MI_WSPC2_PortCrane_MachinerySteel",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_PortCrane_MachinerySteel",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Sheet_Metal_Rusty_01/MI_Ind_War_Sheet_Metal_Rusty_01_A",
+        "role": "Winch housing, cable drums & trolley bogie dark steel"
+      }
+    ],
+    "rail_and_containers": [
+      {
+        "id": "MI_WSPC2_Rail_WellCarTTX",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Rail_WellCarTTX",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Sheet_Metal_Rusty_01/MI_Ind_War_Sheet_Metal_Rusty_01_A",
+        "role": "Intermodal well-car yellow-ochre chassis paint"
+      },
+      {
+        "id": "MI_WSPC2_Rail_WheelSteel",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Rail_WheelSteel",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Sheet_Metal_Rusty_01/MI_Ind_War_Sheet_Metal_Rusty_01_A",
+        "role": "Machined steel rail wheelsets"
+      },
+      {
+        "id": "MI_WSPC2_Container_RedRust",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Container_RedRust",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Seamless weathered oxide red 40ft container livery"
+      },
+      {
+        "id": "MI_WSPC2_Container_NavyBlue",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Container_NavyBlue",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Seamless weathered navy blue 40ft container livery"
+      },
+      {
+        "id": "MI_WSPC2_Container_Evergreen",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Container_Evergreen",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Seamless weathered evergreen 40ft container livery"
+      },
+      {
+        "id": "MI_WSPC2_Container_IndustrialOchre",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Container_IndustrialOchre",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Seamless weathered industrial ochre 40ft container livery"
+      },
+      {
+        "id": "MI_WSPC2_Container_WeatheredGrey",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Container_WeatheredGrey",
+        "parent": "/Game/Scene_Warehouse/Assets/MS/Surfaces/Ind_War_Roof_Painted_01/MI_Ind_War_Roof_Painted_01",
+        "role": "Seamless weathered battleship grey 40ft container livery"
+      }
+    ],
+    "suburb_walls": [
+      {
+        "id": "MI_WSPC2_HouseWall_StuccoCream",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_StuccoCream",
+        "parent": "/Game/Downtown_West/Materials/Buildings_Shared/MI_Building_Stucco",
+        "role": "Warm cream California suburban stucco facade"
+      },
+      {
+        "id": "MI_WSPC2_HouseWall_StuccoSage",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_StuccoSage",
+        "parent": "/Game/Downtown_West/Materials/Buildings_Shared/MI_Building_Stucco",
+        "role": "Muted sage green suburban stucco/clapboard facade"
+      },
+      {
+        "id": "MI_WSPC2_HouseWall_StuccoBlue",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_StuccoBlue",
+        "parent": "/Game/Downtown_West/Materials/Buildings_Shared/MI_Building_Stucco",
+        "role": "Coastal slate-blue suburban/Victorian facade"
+      },
+      {
+        "id": "MI_WSPC2_HouseWall_StuccoTerracotta",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_StuccoTerracotta",
+        "parent": "/Game/Downtown_West/Materials/Buildings_Shared/MI_Building_Stucco",
+        "role": "Terracotta/clay stucco facade"
+      },
+      {
+        "id": "MI_WSPC2_HouseWall_StuccoWhite",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_StuccoWhite",
+        "parent": "/Game/Downtown_West/Materials/Buildings_Shared/MI_Building_Stucco_White",
+        "role": "Off-white California suburban stucco facade"
+      },
+      {
+        "id": "MI_WSPC2_HouseWall_CityParkTan",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_HouseWall_CityParkTan",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_Wall02_4",
+        "role": "Matte tan plaster wall override (Metallic=0.0, Roughness=0.82)"
+      }
+    ],
+    "suburb_roofs": [
+      {
+        "id": "MI_WSPC2_Roof_CharcoalSlate",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Roof_CharcoalSlate",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_RoofTile01_1",
+        "role": "Matte charcoal slate roof tiles (Metallic=0.0, Roughness=0.88)"
+      },
+      {
+        "id": "MI_WSPC2_Roof_WarmBrown",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Roof_WarmBrown",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_RoofTile01_2",
+        "role": "Matte warm brown roof tiles (Metallic=0.0, Roughness=0.88)"
+      },
+      {
+        "id": "MI_WSPC2_Roof_Terracotta",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Roof_Terracotta",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_RoofTile02_1",
+        "role": "Matte Spanish terracotta roof tiles (Metallic=0.0, Roughness=0.86)"
+      },
+      {
+        "id": "MI_WSPC2_Roof_WeatheredGrey",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Roof_WeatheredGrey",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_RoofTile01_1",
+        "role": "Matte weathered grey shingle/tile roof (Metallic=0.0, Roughness=0.90)"
+      },
+      {
+        "id": "MI_WSPC2_Roof_RustRed",
+        "asset_path": "/Game/Scenery/Imported/Materials/MI_WSPC2_Roof_RustRed",
+        "parent": "/Game/CityPark/Materials/Buildings/MI_RoofTile02_4",
+        "role": "Matte oxidized rust-red Victorian roof tiles (Metallic=0.0, Roughness=0.86)"
+      }
+    ]
+  },
+  "categories": {
+    "nuclear_plant": {
+      "description": "Parametric Blender-built Nuclear Power Plant landmarks + weathered storage tank dressed with Quixel 8K concrete & OvergrownFactoryENV grime",
+      "bay_district_role": {
+        "sector": "NH3",
+        "landmark": "USI",
+        "placement_notes": "Two hyperboloid cooling towers flanking ReactorDome and TurbineHall; anchor Z=0 on industrial plinth or NH3/USI compound pad."
+      },
+      "assets": [
+        {
+          "id": "SM_Nuclear_CoolingTower",
+          "asset_path": "/Game/Scenery/Imported/02_Usina_Nuclear/SM_Nuclear_CoolingTower/SM_Nuclear_CoolingTower/StaticMeshes/SM_Nuclear_CoolingTower",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/02_Usina_Nuclear/SM_Nuclear_CoolingTower.glb",
+          "tris": 16376,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [9050.0, 7700.0, 9539.5],
+          "dims_m": [90.5, 77.0, 95.4],
+          "bay_usage": "Primary twin 92m hyperboloid cooling towers for USI in NH3"
+        },
+        {
+          "id": "SM_Nuclear_ReactorDome",
+          "asset_path": "/Game/Scenery/Imported/02_Usina_Nuclear/SM_Nuclear_ReactorDome/SM_Nuclear_ReactorDome/StaticMeshes/SM_Nuclear_ReactorDome",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/02_Usina_Nuclear/SM_Nuclear_ReactorDome.glb",
+          "tris": 4728,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [4462.1, 6168.0, 4857.5],
+          "dims_m": [44.62, 61.68, 48.58],
+          "bay_usage": "PWR containment building with 24 buttresses & airlock in USI/NH3"
+        },
+        {
+          "id": "SM_Nuclear_TurbineHall",
+          "asset_path": "/Game/Scenery/Imported/02_Usina_Nuclear/SM_Nuclear_TurbineHall/SM_Nuclear_TurbineHall/StaticMeshes/SM_Nuclear_TurbineHall",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/02_Usina_Nuclear/SM_Nuclear_TurbineHall.glb",
+          "tris": 1616,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [7330.0, 5100.0, 2750.0],
+          "dims_m": [73.3, 51.0, 27.5],
+          "bay_usage": "Main generator hall & 3 HV transformer bays adjacent to ReactorDome in USI/NH3"
+        },
+        {
+          "id": "SM_Nuclear_RustedTank",
+          "asset_path": "/Game/Scenery/Imported/02_Usina_Nuclear/SM_Nuclear_RustedTank/SM_Nuclear_RustedTank/StaticMeshes/SM_Nuclear_RustedTank",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/02_Usina_Nuclear/SM_Nuclear_RustedTank.glb",
+          "tris": 5769,
+          "material_slots": 1,
+          "nanite": true,
+          "dims_cm": [735.1, 816.8, 1150.0],
+          "dims_m": [7.35, 8.17, 11.5],
+          "bay_usage": "Aux water/coolant tanks around USI yard or industrial docks"
+        }
+      ]
+    },
+    "port": {
+      "description": "Port of Oakland STS Gantry Cranes (reused crane_harbour with 4m metric box UVs), Container Ship & Sokol Whirley Crane",
+      "bay_district_role": {
+        "district": "port",
+        "sectors": ["PP2", "Porto Leste waterfront"],
+        "placement_notes": "SM_Port_STSCrane waterside boom points along local +X. Rotate yaw=180 deg when quay is East of water (water/ship at -X)."
+      },
+      "assets": [
+        {
+          "id": "SM_Port_STSCrane",
+          "asset_path": "/Game/Scenery/Imported/03_Porto/SM_Port_STSCrane/SM_Port_STSCrane/StaticMeshes/SM_Port_STSCrane",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/03_Porto/SM_Port_STSCrane.glb",
+          "tris": 132335,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [10280.7, 4474.8, 4600.0],
+          "dims_m": [102.81, 44.75, 46.0],
+          "bay_usage": "Heavy ship-to-shore container cranes along port/PP2 berth apron (boom +X)"
+        },
+        {
+          "id": "SM_Port_ContainerShip",
+          "asset_path": "/Game/Scenery/Imported/03_Porto/SM_Port_ContainerShip/SM_Port_ContainerShip/StaticMeshes/SM_Port_ContainerShip",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/03_Porto/SM_Port_ContainerShip.glb",
+          "tris": 188676,
+          "material_slots": 3,
+          "nanite": true,
+          "dims_cm": [19500.0, 2749.2, 3611.1],
+          "dims_m": [195.0, 27.49, 36.11],
+          "bay_usage": "Berthed cargo vessel alongside port/PP2 quay under STS crane booms"
+        },
+        {
+          "id": "SM_Port_CraneSokol",
+          "asset_path": "/Game/Scenery/Imported/03_Porto/SM_Port_CraneSokol/SM_Port_CraneSokol/StaticMeshes/SM_Port_CraneSokol",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/03_Porto/SM_Port_CraneSokol.glb",
+          "tris": 14356,
+          "material_slots": 3,
+          "nanite": true,
+          "dims_cm": [3451.7, 1583.9, 3400.0],
+          "dims_m": [34.52, 15.84, 34.0],
+          "bay_usage": "Secondary rail-mounted jib crane on outer piers / bulk wharf"
+        }
+      ]
+    },
+    "airport": {
+      "description": "Airfield control tower landmark normalized to Z=0 real-world height",
+      "bay_district_role": {
+        "sector": "SE1",
+        "landmark": "AER",
+        "placement_notes": "Place adjacent to runway/apron terminal in SE1 airfield compound."
+      },
+      "assets": [
+        {
+          "id": "SM_Airport_ATCTower",
+          "asset_path": "/Game/Scenery/Imported/04_Aeroporto/SM_Airport_ATCTower/SM_Airport_ATCTower/StaticMeshes/SM_Airport_ATCTower",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/04_Aeroporto/SM_Airport_ATCTower.glb",
+          "tris": 5178,
+          "material_slots": 1,
+          "nanite": true,
+          "dims_cm": [969.4, 969.4, 3800.0],
+          "dims_m": [9.69, 9.69, 38.0],
+          "bay_usage": "Air Traffic Control tower for AER airfield landmark in SE1"
+        }
+      ]
+    },
+    "chinatown": {
+      "description": "Overhead street signboards & lantern props for Chinatown corridor and Operation 09",
+      "bay_district_role": {
+        "district": "chinatown",
+        "mission": "Op.09",
+        "placement_notes": "Signboards elevate along street facades or cantilevers; lanterns hang beneath awnings/cables."
+      },
+      "assets": [
+        {
+          "id": "SM_Chinatown_Signboards",
+          "asset_path": "/Game/Scenery/Imported/05_Chinatown/SM_Chinatown_Signboards/SM_Chinatown_Signboards/StaticMeshes/SM_Chinatown_Signboards",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/05_Chinatown/SM_Chinatown_Signboards.glb",
+          "tris": 3506,
+          "material_slots": 2,
+          "nanite": true,
+          "dims_cm": [1097.5, 409.7, 750.0],
+          "dims_m": [10.98, 4.1, 7.5],
+          "bay_usage": "Cantilevered neon/painted shop signs along Chinatown blocks"
+        },
+        {
+          "id": "SM_Chinatown_LanternSingle",
+          "asset_path": "/Game/Scenery/Imported/05_Chinatown/SM_Chinatown_LanternSingle/SM_Chinatown_LanternSingle/StaticMeshes/SM_Chinatown_LanternSingle",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/05_Chinatown/SM_Chinatown_LanternSingle.glb",
+          "tris": 1412,
+          "material_slots": 3,
+          "nanite": true,
+          "dims_cm": [26.8, 26.8, 85.0],
+          "dims_m": [0.27, 0.27, 0.85],
+          "bay_usage": "Shopfront & streetlamp hanging red lantern prop"
+        },
+        {
+          "id": "SM_Chinatown_LanternCluster",
+          "asset_path": "/Game/Scenery/Imported/05_Chinatown/SM_Chinatown_LanternCluster/SM_Chinatown_LanternCluster/StaticMeshes/SM_Chinatown_LanternCluster",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/05_Chinatown/SM_Chinatown_LanternCluster.glb",
+          "tris": 29988,
+          "material_slots": 1,
+          "nanite": true,
+          "dims_cm": [377.6, 118.0, 220.0],
+          "dims_m": [3.78, 1.18, 2.2],
+          "bay_usage": "Cross-street string lantern clusters in Chinatown / Op.09 alleys"
+        }
+      ]
+    },
+    "rail_freight": {
+      "description": "US standard gauge (1.435m) intermodal single/double-stack well-cars + graffiti tank car + derelict freight wagon aligned +X forward",
+      "bay_district_role": {
+        "corridor": "Port & Industrial Rail Yards / Freight Sidings",
+        "gauge_m": 1.435,
+        "coupler_height_m": 0.88,
+        "consist_spacing_m": 17.4,
+        "forward_axis": "+X",
+        "placement_notes": "Well-cars couple cleanly end-to-end at 17.4 m pitch matching Rail_EMD_GP7; place wheelsets at railhead Z=0."
+      },
+      "assets": [
+        {
+          "id": "SM_Rail_TankCar_Graffiti",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/SM_Rail_TankCar_Graffiti/SM_Rail_TankCar_Graffiti/StaticMeshes/SM_Rail_TankCar_Graffiti",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/06_Ferrovia_Vagoes/SM_Rail_TankCar_Graffiti.glb",
+          "tris": 45287,
+          "material_slots": 3,
+          "nanite": true,
+          "dims_cm": [1520.0, 340.7, 477.1],
+          "dims_m": [15.2, 3.41, 4.77],
+          "bay_usage": "Weathered tank car for port/refinery rail sidings & lead consists"
+        },
+        {
+          "id": "SM_Rail_DerelictWagon",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/SM_Rail_DerelictWagon/SM_Rail_DerelictWagon/StaticMeshes/SM_Rail_DerelictWagon",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/06_Ferrovia_Vagoes/SM_Rail_DerelictWagon.glb",
+          "tris": 45096,
+          "material_slots": 1,
+          "nanite": true,
+          "dims_cm": [1850.0, 318.2, 463.4],
+          "dims_m": [18.5, 3.18, 4.63],
+          "bay_usage": "Abandoned rusted box/freight car on disused spurs"
+        },
+        {
+          "id": "SM_Rail_WellCar_Single",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/SM_Rail_WellCar_Single/SM_Rail_WellCar_Single/StaticMeshes/SM_Rail_WellCar_Single",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/06_Ferrovia_Vagoes/SM_Rail_WellCar_Single.glb",
+          "tris": 4944,
+          "material_slots": 5,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 317.0],
+          "dims_m": [17.28, 3.07, 3.17],
+          "livery": "RedRust 40ft container",
+          "bay_usage": "Single-stack intermodal container car (17.4m consist pitch)"
+        },
+        {
+          "id": "SM_Rail_WellCar_Single_VarNavy",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/Variants/SM_Rail_WellCar_Single_VarNavy",
+          "base_mesh": "SM_Rail_WellCar_Single",
+          "tris": 4944,
+          "material_slots": 5,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 317.0],
+          "dims_m": [17.28, 3.07, 3.17],
+          "livery": "NavyBlue 40ft container",
+          "bay_usage": "Single-stack intermodal variant for mixed freight consists"
+        },
+        {
+          "id": "SM_Rail_WellCar_Single_VarGreen",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/Variants/SM_Rail_WellCar_Single_VarGreen",
+          "base_mesh": "SM_Rail_WellCar_Single",
+          "tris": 4944,
+          "material_slots": 5,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 317.0],
+          "dims_m": [17.28, 3.07, 3.17],
+          "livery": "Evergreen 40ft container",
+          "bay_usage": "Single-stack intermodal variant for mixed freight consists"
+        },
+        {
+          "id": "SM_Rail_WellCar_Double",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/SM_Rail_WellCar_Double/SM_Rail_WellCar_Double/StaticMeshes/SM_Rail_WellCar_Double",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/06_Ferrovia_Vagoes/SM_Rail_WellCar_Double.glb",
+          "tris": 6476,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 578.0],
+          "dims_m": [17.28, 3.07, 5.78],
+          "livery": "RedRust lower + NavyBlue upper 40ft containers",
+          "bay_usage": "Double-stack intermodal container car (17.4m consist pitch)"
+        },
+        {
+          "id": "SM_Rail_WellCar_Double_VarGreenOchre",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/Variants/SM_Rail_WellCar_Double_VarGreenOchre",
+          "base_mesh": "SM_Rail_WellCar_Double",
+          "tris": 6476,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 578.0],
+          "dims_m": [17.28, 3.07, 5.78],
+          "livery": "Evergreen lower + IndustrialOchre upper 40ft containers",
+          "bay_usage": "Double-stack intermodal variant for port/rail mainline trains"
+        },
+        {
+          "id": "SM_Rail_WellCar_Double_VarNavyGrey",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/Variants/SM_Rail_WellCar_Double_VarNavyGrey",
+          "base_mesh": "SM_Rail_WellCar_Double",
+          "tris": 6476,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 578.0],
+          "dims_m": [17.28, 3.07, 5.78],
+          "livery": "NavyBlue lower + WeatheredGrey upper 40ft containers",
+          "bay_usage": "Double-stack intermodal variant for port/rail mainline trains"
+        },
+        {
+          "id": "SM_Rail_WellCar_Double_VarOchreRed",
+          "asset_path": "/Game/Scenery/Imported/06_Ferrovia_Vagoes/Variants/SM_Rail_WellCar_Double_VarOchreRed",
+          "base_mesh": "SM_Rail_WellCar_Double",
+          "tris": 6476,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1728.0, 307.0, 578.0],
+          "dims_m": [17.28, 3.07, 5.78],
+          "livery": "IndustrialOchre lower + RedRust upper 40ft containers",
+          "bay_usage": "Double-stack intermodal variant for port/rail mainline trains"
+        }
+      ]
+    },
+    "suburbs": {
+      "description": "4 California/Oakland house archetypes + 16 distinct wall/roof/trim MaterialInstance variations built over Downtown_West Stucco/Plaster/Brick/WoodTrim & matte CityPark RoofTiles",
+      "bay_district_role": {
+        "district": "Suburban / Outer Residential Lots & Victorian Hillsides",
+        "placement_notes": "Prefer the 16 Var1..Var4 meshes (or SM_Suburb_HouseD_Victorian base which already carries Var1 OaklandBlue_Slate) for varied block ranks/lots."
+      },
+      "assets": [
+        {
+          "id": "SM_Suburb_HouseA",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/SM_Suburb_HouseA/SM_Suburb_HouseA/StaticMeshes/SM_Suburb_HouseA",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/01_Suburbios_Casas/SM_Suburb_HouseA.glb",
+          "archetype": "HouseA",
+          "is_variant": false,
+          "tris": 41990,
+          "material_slots": 19,
+          "nanite": true,
+          "dims_cm": [1940.8, 1540.0, 860.0],
+          "dims_m": [19.41, 15.4, 8.6],
+          "bay_usage": "Base Ranch/Two-story suburban archetype"
+        },
+        {
+          "id": "SM_Suburb_HouseA_Var1_QuixelCream_Slate",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseA_Var1_QuixelCream_Slate",
+          "base_mesh": "SM_Suburb_HouseA",
+          "archetype": "HouseA",
+          "is_variant": true,
+          "tris": 41990,
+          "material_slots": 19,
+          "nanite": true,
+          "dims_cm": [1940.8, 1540.0, 860.0],
+          "dims_m": [19.41, 15.4, 8.6],
+          "palette": "Cream stucco, charcoal slate roof, white trim, brown brick",
+          "bay_usage": "Suburban residential lot variant A1"
+        },
+        {
+          "id": "SM_Suburb_HouseA_Var2_QuixelSage_BrownRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseA_Var2_QuixelSage_BrownRoof",
+          "base_mesh": "SM_Suburb_HouseA",
+          "archetype": "HouseA",
+          "is_variant": true,
+          "tris": 41990,
+          "material_slots": 19,
+          "nanite": true,
+          "dims_cm": [1940.8, 1540.0, 860.0],
+          "dims_m": [19.41, 15.4, 8.6],
+          "palette": "Sage stucco, warm brown roof, white trim, red brick",
+          "bay_usage": "Suburban residential lot variant A2"
+        },
+        {
+          "id": "SM_Suburb_HouseA_Var3_QuixelBlue_GreyRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseA_Var3_QuixelBlue_GreyRoof",
+          "base_mesh": "SM_Suburb_HouseA",
+          "archetype": "HouseA",
+          "is_variant": true,
+          "tris": 41990,
+          "material_slots": 19,
+          "nanite": true,
+          "dims_cm": [1940.8, 1540.0, 860.0],
+          "dims_m": [19.41, 15.4, 8.6],
+          "palette": "Coastal blue stucco, weathered grey roof, dark-grey trim, brown brick",
+          "bay_usage": "Suburban residential lot variant A3"
+        },
+        {
+          "id": "SM_Suburb_HouseA_Var4_Terracotta_TerraRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseA_Var4_Terracotta_TerraRoof",
+          "base_mesh": "SM_Suburb_HouseA",
+          "archetype": "HouseA",
+          "is_variant": true,
+          "tris": 41990,
+          "material_slots": 19,
+          "nanite": true,
+          "dims_cm": [1940.8, 1540.0, 860.0],
+          "dims_m": [19.41, 15.4, 8.6],
+          "palette": "Terracotta stucco, terracotta tile roof, brown trim, red sandstone",
+          "bay_usage": "Suburban residential lot variant A4"
+        },
+        {
+          "id": "SM_Suburb_HouseB",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/SM_Suburb_HouseB/SM_Suburb_HouseB/StaticMeshes/SM_Suburb_HouseB",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/01_Suburbios_Casas/SM_Suburb_HouseB.glb",
+          "archetype": "HouseB",
+          "is_variant": false,
+          "tris": 6066,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [919.7, 1456.5, 740.0],
+          "dims_m": [9.2, 14.57, 7.4],
+          "bay_usage": "Base narrow-lot cottage archetype"
+        },
+        {
+          "id": "SM_Suburb_HouseB_Var1_QuixelBlue_Slate",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseB_Var1_QuixelBlue_Slate",
+          "base_mesh": "SM_Suburb_HouseB",
+          "archetype": "HouseB",
+          "is_variant": true,
+          "tris": 6066,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [919.7, 1456.5, 740.0],
+          "dims_m": [9.2, 14.57, 7.4],
+          "palette": "Coastal blue wood/stucco, charcoal slate roof, brown brick base",
+          "bay_usage": "Suburban narrow-lot variant B1"
+        },
+        {
+          "id": "SM_Suburb_HouseB_Var2_QuixelCream_Brown",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseB_Var2_QuixelCream_Brown",
+          "base_mesh": "SM_Suburb_HouseB",
+          "archetype": "HouseB",
+          "is_variant": true,
+          "tris": 6066,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [919.7, 1456.5, 740.0],
+          "dims_m": [9.2, 14.57, 7.4],
+          "palette": "Cream stucco, warm brown roof, red sandstone lower wall",
+          "bay_usage": "Suburban narrow-lot variant B2"
+        },
+        {
+          "id": "SM_Suburb_HouseB_Var3_CityParkWall_Terra",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseB_Var3_CityParkWall_Terra",
+          "base_mesh": "SM_Suburb_HouseB",
+          "archetype": "HouseB",
+          "is_variant": true,
+          "tris": 6066,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [919.7, 1456.5, 740.0],
+          "dims_m": [9.2, 14.57, 7.4],
+          "palette": "CityPark matte tan wall, terracotta roof, red brick lower wall",
+          "bay_usage": "Suburban narrow-lot variant B3"
+        },
+        {
+          "id": "SM_Suburb_HouseB_Var4_QuixelSage_GreyRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseB_Var4_QuixelSage_GreyRoof",
+          "base_mesh": "SM_Suburb_HouseB",
+          "archetype": "HouseB",
+          "is_variant": true,
+          "tris": 6066,
+          "material_slots": 7,
+          "nanite": true,
+          "dims_cm": [919.7, 1456.5, 740.0],
+          "dims_m": [9.2, 14.57, 7.4],
+          "palette": "Sage stucco, weathered grey roof, brown brick base",
+          "bay_usage": "Suburban narrow-lot variant B4"
+        },
+        {
+          "id": "SM_Suburb_HouseC",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/SM_Suburb_HouseC/SM_Suburb_HouseC/StaticMeshes/SM_Suburb_HouseC",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/01_Suburbios_Casas/SM_Suburb_HouseC.glb",
+          "archetype": "HouseC",
+          "is_variant": false,
+          "tris": 145401,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1808.4, 1714.8, 820.0],
+          "dims_m": [18.08, 17.15, 8.2],
+          "bay_usage": "Base wide craftsman suburban house archetype"
+        },
+        {
+          "id": "SM_Suburb_HouseC_Var1_QuixelWhite_Slate",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseC_Var1_QuixelWhite_Slate",
+          "base_mesh": "SM_Suburb_HouseC",
+          "archetype": "HouseC",
+          "is_variant": true,
+          "tris": 145401,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1808.4, 1714.8, 820.0],
+          "dims_m": [18.08, 17.15, 8.2],
+          "palette": "Off-white stucco siding, charcoal slate roof, white trim",
+          "bay_usage": "Wide suburban craftsman lot variant C1"
+        },
+        {
+          "id": "SM_Suburb_HouseC_Var2_QuixelCream_Terra",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseC_Var2_QuixelCream_Terra",
+          "base_mesh": "SM_Suburb_HouseC",
+          "archetype": "HouseC",
+          "is_variant": true,
+          "tris": 145401,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1808.4, 1714.8, 820.0],
+          "dims_m": [18.08, 17.15, 8.2],
+          "palette": "Cream stucco siding, terracotta roof, brown trim",
+          "bay_usage": "Wide suburban craftsman lot variant C2"
+        },
+        {
+          "id": "SM_Suburb_HouseC_Var3_DWPlaster_BrownRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseC_Var3_DWPlaster_BrownRoof",
+          "base_mesh": "SM_Suburb_HouseC",
+          "archetype": "HouseC",
+          "is_variant": true,
+          "tris": 145401,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1808.4, 1714.8, 820.0],
+          "dims_m": [18.08, 17.15, 8.2],
+          "palette": "Downtown_West Plaster_A siding, warm brown roof, dark-grey trim",
+          "bay_usage": "Wide suburban craftsman lot variant C3"
+        },
+        {
+          "id": "SM_Suburb_HouseC_Var4_QuixelSage_GreyRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseC_Var4_QuixelSage_GreyRoof",
+          "base_mesh": "SM_Suburb_HouseC",
+          "archetype": "HouseC",
+          "is_variant": true,
+          "tris": 145401,
+          "material_slots": 6,
+          "nanite": true,
+          "dims_cm": [1808.4, 1714.8, 820.0],
+          "dims_m": [18.08, 17.15, 8.2],
+          "palette": "Sage stucco siding, weathered grey roof, white trim",
+          "bay_usage": "Wide suburban craftsman lot variant C4"
+        },
+        {
+          "id": "SM_Suburb_HouseD_Victorian",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/SM_Suburb_HouseD_Victorian/SM_Suburb_HouseD_Victorian/StaticMeshes/SM_Suburb_HouseD_Victorian",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/01_Suburbios_Casas/SM_Suburb_HouseD_Victorian.glb",
+          "archetype": "HouseD_Victorian",
+          "is_variant": false,
+          "tris": 68000,
+          "material_slots": 22,
+          "nanite": true,
+          "dims_cm": [703.7, 853.1, 1080.0],
+          "dims_m": [7.04, 8.53, 10.8],
+          "palette": "Dressed identically to Var1_OaklandBlue_Slate",
+          "bay_usage": "Base Oakland/SF narrow Victorian townhouse archetype"
+        },
+        {
+          "id": "SM_Suburb_HouseD_Victorian_Var1_OaklandBlue_Slate",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseD_Victorian_Var1_OaklandBlue_Slate",
+          "base_mesh": "SM_Suburb_HouseD_Victorian",
+          "archetype": "HouseD_Victorian",
+          "is_variant": true,
+          "tris": 68000,
+          "material_slots": 22,
+          "nanite": true,
+          "dims_cm": [703.7, 853.1, 1080.0],
+          "dims_m": [7.04, 8.53, 10.8],
+          "palette": "Coastal blue outer walls, charcoal slate roof, white porch/cornice, red brick chimney",
+          "bay_usage": "Oakland Victorian row house variant D1"
+        },
+        {
+          "id": "SM_Suburb_HouseD_Victorian_Var2_OaklandCream_Brown",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseD_Victorian_Var2_OaklandCream_Brown",
+          "base_mesh": "SM_Suburb_HouseD_Victorian",
+          "archetype": "HouseD_Victorian",
+          "is_variant": true,
+          "tris": 68000,
+          "material_slots": 22,
+          "nanite": true,
+          "dims_cm": [703.7, 853.1, 1080.0],
+          "dims_m": [7.04, 8.53, 10.8],
+          "palette": "Cream outer walls, warm brown roof, brown porch/cornice, brown brick chimney",
+          "bay_usage": "Oakland Victorian row house variant D2"
+        },
+        {
+          "id": "SM_Suburb_HouseD_Victorian_Var3_OaklandSage_Grey",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseD_Victorian_Var3_OaklandSage_Grey",
+          "base_mesh": "SM_Suburb_HouseD_Victorian",
+          "archetype": "HouseD_Victorian",
+          "is_variant": true,
+          "tris": 68000,
+          "material_slots": 22,
+          "nanite": true,
+          "dims_cm": [703.7, 853.1, 1080.0],
+          "dims_m": [7.04, 8.53, 10.8],
+          "palette": "Sage outer walls, weathered grey roof, white porch, dark green cornice, brown brick chimney",
+          "bay_usage": "Oakland Victorian row house variant D3"
+        },
+        {
+          "id": "SM_Suburb_HouseD_Victorian_Var4_OaklandTerra_RedRoof",
+          "asset_path": "/Game/Scenery/Imported/01_Suburbios_Casas/Variants/SM_Suburb_HouseD_Victorian_Var4_OaklandTerra_RedRoof",
+          "base_mesh": "SM_Suburb_HouseD_Victorian",
+          "archetype": "HouseD_Victorian",
+          "is_variant": true,
+          "tris": 68000,
+          "material_slots": 22,
+          "nanite": true,
+          "dims_cm": [703.7, 853.1, 1080.0],
+          "dims_m": [7.04, 8.53, 10.8],
+          "palette": "Terracotta outer walls, rust-red roof, white porch, dark-grey cornice, red brick chimney",
+          "bay_usage": "Oakland Victorian row house variant D4"
+        }
+      ]
+    },
+    "flora": {
+      "description": "California street-median and waterfront palms normalized to metric scale (Z=0)",
+      "bay_district_role": {
+        "placement_notes": "Use along waterfront boulevards, suburban medians, and plaza borders; scale ~0.85..1.15 for organic height variation."
+      },
+      "assets": [
+        {
+          "id": "SM_Flora_DatePalm",
+          "asset_path": "/Game/Scenery/Imported/07_Palmeiras/SM_Flora_DatePalm/SM_Flora_DatePalm/StaticMeshes/SM_Flora_DatePalm",
+          "source_glb": "ASSETS TO USE/02_Cenario_Preparados/07_Palmeiras/SM_Flora_DatePalm.glb",
+          "tris": 9941,
+          "material_slots": 4,
+          "nanite": true,
+          "dims_cm": [1004.1, 959.0, 1350.0],
+          "dims_m": [10.04, 9.59, 13.5],
+          "bay_usage": "California Canary Island Date Palm for medians, avenues & waterfront promenades"
+        }
+      ]
+    }
+  }
+}
