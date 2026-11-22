@@ -8,6 +8,7 @@ The Bay map is split so a build opens and saves only the districts it changes, n
   /Game/Bay/Maps/Districts/WSPC2_Bay_<district>  one per district: its sectors' ground, buildings and props, and
                                                  the bridges, tunnels, viaducts and places that stand in it
   /Game/Bay/Maps/Districts/WSPC2_Bay_Country     the trees of the hills round the city
+  /Game/Bay/Maps/Districts/WSPC2_Bay_Outskirts   the land beyond the playable frame and the closed exit roads
 A sector's district is the letters its name starts with (CW12 -> CW, IOX3 -> IOX). A structure goes to the district
 of the sector it stands in: the sector whose outline holds its centre (the "at" point in structures.py, the
 "centre" of sectors.PLACES, or else the middle of its mesh), the nearest sector box if none does.
@@ -33,6 +34,7 @@ import structures
 PERSISTENT = "/Game/Bay/Maps/WSPC2_Bay"
 LEVEL = "/Game/Bay/Maps/Districts/WSPC2_Bay_%s"
 COUNTRY = "Country"
+OUTSKIRTS = "Outskirts"                     # far ground, far water, exit roads and their roadblocks (plan_outskirts.py)
 
 
 def district_of_name(name):
@@ -105,7 +107,7 @@ def main():
             where = glb_centre(glb)
         structure_level[name] = district_at(*where) if where else None
 
-    districts = sorted(set(sector_level.values()) | {d for d in structure_level.values() if d}) + [COUNTRY]
+    districts = sorted(set(sector_level.values()) | {d for d in structure_level.values() if d}) + [COUNTRY, OUTSKIRTS]
     out = {"persistent": PERSISTENT, "sectors": sector_level, "structures": structure_level,
            "levels": {d: LEVEL % d for d in districts}}
     with open(os.path.join(DATA, "levels.json"), "w") as f:

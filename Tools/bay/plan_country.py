@@ -4,7 +4,8 @@
 
 Input:  Saved/Bay/landscape.json, landscape.r16, layer_*.raw (build_surface.py: the ground's height and its paint),
         Tools/bay/sectors.py (every sector's outline: inside them the sectors plant their own trees),
-        Saved/Bay/sectors/<sector>/ground.npz of the sectors with natural ground ("wild": that ground is country too)
+        Saved/Bay/sectors/<sector>/ground.npz of the sectors with natural ground ("wild": that ground is country too),
+        Saved/Bay/outskirts/outskirts.json (optional: the exit roads, kept clear of trees)
 Output: Saved/Bay/country/trees.json   {"tiles": {"<tx>_<ty>": {"trees": {mesh: [[x, y, z, yaw, scale], ...]},
                                                               "bushes": {mesh: [...]}}}, "counts": {...}}
                                        positions in Unreal cm (x east, y south), tiles of TILE_M (build_bay.py stage
@@ -42,6 +43,7 @@ CELL_M = 8.0
 TILE_M = 1000.0
 EDGE_M = 6.0                # keep clear of a sector's outline (its kerbs, walls and own trees)
 WILD_EDGE_M = 3             # on a sector's natural ground: keep this clear of its kerbs, gardens and walls (whole metres)
+EXIT_CLEAR_M = 6.0          # kept clear on each side of an exit road (plan_outskirts.py)
 FRAME_PAD_M = 600.0         # how far beyond the map's frame the country is planted
 SEED = 2026
 CP = "/Game/CityPark/Meshes/Flora"
@@ -130,6 +132,17 @@ def main():
     in_frame = ((cx[None, :] > X_LEFT - FRAME_PAD_M) & (cx[None, :] < x_right + FRAME_PAD_M) &
                 (cy[:, None] < Y_TOP + FRAME_PAD_M) & (cy[:, None] > y_bottom - FRAME_PAD_M))
     ok = (blocked == 0) & in_frame & (zc > 1.0) & (sand < 0.3) & (paved < 0.2) & (rock < 0.3) & (slope < MAX_SLOPE)
+    # nothing on the exit roads through the country (plan_outskirts.py, 2026-11-21): their strip and EXIT_CLEAR_M more
+    exits_path = data_path(os.path.join("outskirts", "outskirts.json"))
+    if os.path.exists(exits_path):
+        road = np.zeros(ok.shape, np.uint8)
+        for ex in json.load(open(exits_path))["exits"]:
+            line = np.array(ex["line"])[:, :2]
+            cols = (line[:, 0] - cx[0]) / (cx[1] - cx[0])
+            rows = (line[:, 1] - cy[0]) / (cy[1] - cy[0])
+            thick = max(1, int(round((ex["width_m"] + 2 * EXIT_CLEAR_M) / CELL_M)))
+            cv2.polylines(road, [np.round(np.stack([cols, rows], -1)).astype(np.int32)], False, 1, thick)
+        ok &= road == 0
 
     groves = fbm((ch, cw), 70.0 / CELL_M, seed=61)                  # groves and open meadows
     grove = np.clip(0.30 + 1.25 * groves, 0.0, 1.7)

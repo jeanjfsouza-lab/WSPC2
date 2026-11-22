@@ -32,6 +32,14 @@ Stages. Each owns its outliner folders and only removes and rebuilds what is its
   review    creates /Game/Bay/Review/BP_BayReviewGameMode, the game mode without a car that tour.ps1 uses
   inspect   builds nothing: logs the parameters of the materials listed in INSPECT, to plan new instances
 
+  outskirts the land beyond the playable frame and the closed exit roads (Saved/Bay/outskirts: plan_outskirts.py,
+            outskirts_mesh.py): far ground with its colour texture, far water, the roads' strips, no collision, no
+            shadows; at each road's start a police roadblock and an invisible wall (folder Bay/Outskirts, sublevel
+            Outskirts). Roadblock pieces come from optional packs (Scene_RoadsideConstruction, Vehicles/Imported) with
+            a plain fallback
+  sublevels makes the persistent map list every sublevel of Saved/Bay/levels.json that exists on disk (always
+            loaded), and only that; run on its own, in a fresh editor (a sublevel opened in the same session is not
+            added: 2026-11-21, the Outskirts level stayed out of the map)
   split     once: moves the actors of the single-level map into one sublevel per district (Saved/Bay/levels.json,
             from plan_levels.py), all always loaded, and saves them; nothing else is built in that run
 
@@ -706,6 +714,41 @@ def rotator(yaw):
     return r
 
 
+# A material drawn on an instanced mesh must say so ("Used with Instanced Static Meshes"), and on a Nanite mesh
+# "Used with Nanite": a material without the flag is replaced by the engine's grey default in the game. Many pack
+# materials (Downtown_West, Construction_VOL1, glTF imports) and some of the Bay's own masters lack it (found by the
+# Antigravity agent in bay_views.log, 2026-11-21: the suburban houses came out plain grey). Every mesh the build
+# instances goes through spawn_instanced(), which sets both flags on the base material of each of its slots once.
+_USAGE_CHECKED = set()
+USAGE_FLAGS = ("used_with_instanced_static_meshes", "used_with_nanite")
+
+
+def ensure_usage(material):
+    if material is None:
+        return
+    base = material.get_base_material()
+    if base is None:
+        return
+    key = base.get_path_name()
+    if key in _USAGE_CHECKED or not key.startswith("/Game/"):
+        return                  # never the engine's own materials (the cube's default grid material lives there)
+    _USAGE_CHECKED.add(key)
+    missing = [flag for flag in USAGE_FLAGS if not base.get_editor_property(flag)]
+    if not missing:
+        return
+    for flag in missing:
+        base.set_editor_property(flag, True)
+    mel.recompile_material(base)
+    assets.save_loaded_asset(base)
+    log("usage flags %s set on %s" % (", ".join(missing), key))
+
+
+def spawn_instanced(world, mesh, transforms, *args):
+    for slot in mesh.static_materials:
+        ensure_usage(slot.material_interface)
+    return unreal.WSPC2CityTools.spawn_instanced_meshes(world, mesh, transforms, *args)
+
+
 def build_buildings(world, actors):
     """Places each sector's buildings (Saved/Bay/sectors/<name>/lots.json, from plan_lots.py): one instanced
     actor per building mesh, one invisible box per building as its collision, and a plinth under each building
@@ -731,20 +774,21 @@ def build_buildings(world, actors):
             transforms = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw), scale=unreal.Vector(s, s, s))
                           for x, y, z, yaw, s in rows]
             label = "%s_%s" % (name, mesh_path.rsplit("/", 1)[-1])
-            if unreal.WSPC2CityTools.spawn_instanced_meshes(world, mesh, transforms, False, False, label, folder, 0.0, False):
+            if spawn_instanced(world, mesh, transforms, False, False, label, folder, 0.0, False):
                 placed += len(rows)
         boxes = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw),
                                   scale=unreal.Vector(sx / 100.0, sy / 100.0, sz / 100.0))
                  for x, y, z, yaw, sx, sy, sz in layout["collision"]]
         if boxes:
-            unreal.WSPC2CityTools.spawn_instanced_meshes(world, cube, boxes, True, True, "%s_BuildingCollision" % name, folder, 0.0, True)
+            spawn_instanced(world, cube, boxes, True, True, "%s_BuildingCollision" % name, folder, 0.0, True)
         plinths = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw),
                                     scale=unreal.Vector(sx / 100.0, sy / 100.0, sz / 100.0))
                    for x, y, z, yaw, sx, sy, sz in layout.get("plinths", []) + layout.get("podiums", [])]
         if plinths:
-            actor = unreal.WSPC2CityTools.spawn_instanced_meshes(world, cube, plinths, False, False, "%s_Plinths" % name, folder, 0.0, False)
+            actor = spawn_instanced(world, cube, plinths, False, False, "%s_Plinths" % name, folder, 0.0, False)
             if actor and plinth_material:
                 for component in actor.get_components_by_class(unreal.InstancedStaticMeshComponent):
+                    ensure_usage(plinth_material)
                     component.set_material(0, plinth_material)
         log("buildings %s: %d old actors removed, %d buildings, %d mesh instances, %d plinths and podiums%s" % (
             name, removed, len(layout["buildings"]), placed, len(plinths), ("; MISSING meshes: %s" % missing) if missing else ""))
@@ -772,7 +816,7 @@ def build_props(world, actors):
                 transforms = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw), scale=unreal.Vector(s, s, s))
                               for x, y, z, yaw, s in rows]
                 label = "%s_%s" % (name, mesh_path.rsplit("/", 1)[-1])
-                if unreal.WSPC2CityTools.spawn_instanced_meshes(world, mesh, transforms, True, False, label, folder, cull_cm, True):
+                if spawn_instanced(world, mesh, transforms, True, False, label, folder, cull_cm, True):
                     placed[group] = placed.get(group, 0) + len(rows)
         log("props %s: %d old actors removed, %d furniture, %d trees%s" % (
             name, removed, placed.get("props", 0), placed.get("trees", 0), ("; MISSING meshes: %s" % missing) if missing else ""))
@@ -983,7 +1027,7 @@ def build_country(world, actors):
                 transforms = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw), scale=unreal.Vector(s, s, s))
                               for x, y, z, yaw, s in rows]
                 label = "Country_%s_%s" % (tile, mesh_path.rsplit("/", 1)[-1])
-                if unreal.WSPC2CityTools.spawn_instanced_meshes(world, mesh, transforms, group == "trees", False, label, folder,
+                if spawn_instanced(world, mesh, transforms, group == "trees", False, label, folder,
                                                                  COUNTRY_CULL_CM[group], True):
                     placed[group] = placed.get(group, 0) + len(rows)
     log("country: %d old actors removed, %d trees and %d shrubs in %d tiles%s" % (
@@ -1172,6 +1216,127 @@ def structure_names():
     return [n for n in found if (not wanted or n in wanted) and (ONLY_STRUCTURES is None or n in ONLY_STRUCTURES)]
 
 
+OUTSKIRTS_MATERIAL = BAY_MATERIALS + "/M_BayOutskirts"
+ROADBLOCK_MESHES = {
+    "barrier": ["/Game/Scene_RoadsideConstruction/Assets/MS/3D/Ind_Con_Concrete_L_02/SM_Ind_Con_Jersey_Concrete_L_02",
+                "/Game/Construction_VOL1/Meshes/SM_Trafficbarrier_01"],
+    "cone": ["/Game/Scene_RoadsideConstruction/Assets/MS/3D/Urb_Roa_TrafficCone_Plastic_Red_01/SM_Urb_Roa_Equipment_TrafficCone_Plastic_Red_01"],
+    "patrol": ["/Game/Vehicles/Imported/01_Police/Police_CVPI01_Patrol/Police_CVPI01_Patrol/StaticMeshes/Police_CVPI01_Patrol"],
+    "sign": ["/Game/Scene_RoadsideConstruction/Assets/MS/3D/Urb_Roa_Sign_StopSlow_Metal_Worn_01/SM_Urb_Roa_Sign_StopSlow_Metal_Worn_01"],
+}
+
+
+def outskirts_material(texture):
+    """A plain lit material showing the outskirts' colour texture, rough and without shine."""
+    mat = assets.load_asset(OUTSKIRTS_MATERIAL) if assets.does_asset_exist(OUTSKIRTS_MATERIAL) else \
+        tools.create_asset("M_BayOutskirts", BAY_MATERIALS, unreal.Material, unreal.MaterialFactoryNew())
+    mel.delete_all_material_expressions(mat)
+    mat.set_editor_property("used_with_nanite", True)       # the far terrain is Nanite: without it, the grey default
+    sample = mel.create_material_expression(mat, unreal.MaterialExpressionTextureSampleParameter2D, -400, 0)
+    sample.set_editor_property("parameter_name", "Colour")
+    sample.set_editor_property("texture", texture)
+    mel.connect_material_property(sample, "RGB", unreal.MaterialProperty.MP_BASE_COLOR)
+    rough = mel.create_material_expression(mat, unreal.MaterialExpressionConstant, -400, 200)
+    rough.set_editor_property("r", 0.93)
+    mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    spec = mel.create_material_expression(mat, unreal.MaterialExpressionConstant, -400, 300)
+    spec.set_editor_property("r", 0.25)
+    mel.connect_material_property(spec, "", unreal.MaterialProperty.MP_SPECULAR)
+    mel.recompile_material(mat)
+    assets.save_loaded_asset(mat)
+    return mat
+
+
+def first_asset(paths):
+    for path in paths:
+        if assets.does_asset_exist(path):
+            return assets.load_asset(path)
+    return None
+
+
+def build_outskirts(world, actors):
+    """The land beyond the playable frame and the exit roads with their roadblocks (Saved/Bay/outskirts)."""
+    out = os.path.join(DATA, "outskirts")
+    glb = os.path.join(out, "Outskirts.glb")
+    removed = remove_actors(actors, ["Bay/Outskirts"])
+    if not os.path.exists(glb):
+        log("outskirts: %d old actors removed; no %s (run plan_outskirts.py and outskirts_mesh.py)" % (removed, glb))
+        return
+    folder = GENERATED + "/Outskirts"
+    if assets.does_directory_exist(folder):
+        assets.delete_directory(folder)
+    tasks = []
+    for src, name in ((glb, None), (os.path.join(out, "colour.png"), "T_BayOutskirtsColour")):
+        task = unreal.AssetImportTask()
+        task.filename = src
+        task.destination_path = folder
+        if name:
+            task.destination_name = name
+        task.automated = True
+        task.replace_existing = True
+        task.save = True
+        tasks.append(task)
+    tools.import_asset_tasks(tasks)
+    registry = unreal.AssetRegistryHelpers.get_asset_registry()
+    registry.scan_paths_synchronous([folder], True)
+    texture = assets.load_asset(folder + "/T_BayOutskirtsColour")
+    texture.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_WORLD)
+    texture.set_editor_property("srgb", True)
+    assets.save_loaded_asset(texture)
+    slot_materials = {"Outskirts": outskirts_material(texture), "Water": assets.load_asset(WATER_MATERIAL),
+                      "Road": assets.load_asset(SLOT_MATERIALS["Road"])}
+    placed, tris = 0, 0
+    for data in registry.get_assets_by_path(folder, recursive=True):
+        if str(data.asset_class_path.asset_name) != "StaticMesh":
+            continue
+        mesh = data.get_asset()
+        name = str(data.asset_name)
+        settings = mesh.get_editor_property("nanite_settings")
+        settings.enabled = "_Fine_" in name or "_Coarse_" in name
+        mesh.set_editor_property("nanite_settings", settings)
+        precise_uvs(mesh)
+        for index, slot in enumerate(mesh.static_materials):
+            mat = slot_materials.get(str(slot.material_slot_name))
+            if mat:
+                mesh.set_material(index, mat)
+        assets.save_loaded_asset(mesh)
+        actor = actors.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
+        actor.set_actor_label(name)
+        actor.set_folder_path("Bay/Outskirts/Ground" if "_Road_" not in name else "Bay/Outskirts/Roads")
+        comp = actor.static_mesh_component
+        comp.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+        comp.set_editor_property("cast_shadow", False)
+        tris += mesh.get_num_triangles(0)
+        placed += 1
+
+    with open(os.path.join(out, "outskirts.json")) as f:
+        plan = json.load(f)
+    meshes = {kind: first_asset(paths) for kind, paths in ROADBLOCK_MESHES.items()}
+    cube = assets.load_asset("/Engine/BasicShapes/Cube")
+    pieces = 0
+    for ex in plan["exits"]:
+        rb_folder = "Bay/Outskirts/Roadblock_%s" % ex["name"]
+        for p in ex["roadblock"]:
+            loc = unreal.Vector(p["x"] * 100.0, -p["y"] * 100.0, p["z"] * 100.0)
+            if p["kind"] == "wall":
+                sx, sy, sz = p["size_m"]
+                t = unreal.Transform(location=loc, rotation=rotator(-p["yaw"]), scale=unreal.Vector(sx, sy, sz))
+                spawn_instanced(world, cube, [t], True, True,
+                                                             "Roadblock_%s_Wall" % ex["name"], rb_folder, 0.0, True)
+                pieces += 1
+                continue
+            mesh = meshes.get(p["kind"])
+            if not mesh:
+                continue
+            actor = actors.spawn_actor_from_object(mesh, loc, rotator(-p["yaw"]))
+            actor.set_actor_label("Roadblock_%s_%s" % (ex["name"], p["kind"]))
+            actor.set_folder_path(rb_folder)
+            pieces += 1
+    log("outskirts: %d old actors removed, %d meshes placed (%d triangles), %d exit roads, %d roadblock pieces%s" % (
+        removed, placed, tris, len(plan["exits"]), pieces,
+        "; missing roadblock meshes: %s" % sorted(k for k, v in meshes.items() if not v) if any(not v for v in meshes.values()) else ""))
+
+
 def build_structures(world, actors):
     """Bridges and tunnels (Saved/Bay/structures/<name>/<name>.glb, from span_mesh.py and tunnel_mesh.py) and
     the lamps along the bridges' decks."""
@@ -1238,7 +1403,7 @@ def build_structures(world, actors):
                     continue
                 transforms = [unreal.Transform(location=unreal.Vector(x, y, z), rotation=rotator(yaw), scale=unreal.Vector(s, s, s))
                               for x, y, z, yaw, s in rows]
-                if unreal.WSPC2CityTools.spawn_instanced_meshes(world, mesh, transforms, True, False,
+                if spawn_instanced(world, mesh, transforms, True, False,
                                                                 "%s_%s" % (name, mesh_path.rsplit("/", 1)[-1]), outliner, 150000.0, True):
                     lamps += len(rows)
             lights = spawn_spot_lights(actors, name, outliner + "/Lights", layout.get("light", {}), layout.get("lights", []))
@@ -1323,7 +1488,7 @@ def inspect_materials():
 
 
 DISTRICTS = "/Game/Bay/Maps/Districts"
-DISTRICT_STAGES = ("sectors", "buildings", "props", "structures", "country")
+DISTRICT_STAGES = ("sectors", "buildings", "props", "structures", "country", "outskirts")
 
 
 def district_of_name(name):
@@ -1392,6 +1557,28 @@ def split_map(levels, actors, info):
     log("split: done; persistent map keeps %d actors, %d sublevels saved" % (kept, len(by_level)))
 
 
+def ensure_sublevels(levels, actors, info):
+    """The persistent map lists every district sublevel that exists on disk, always loaded."""
+    world = open_map(levels, MAP)
+    # the editor's Python cannot read the map's list of streaming levels: adding one that is already listed returns
+    # nothing, which is how the ones already there are told apart
+    added, present = [], 0
+    for district, path in sorted(info["levels"].items()):
+        if not assets.does_asset_exist(path):
+            continue
+        if unreal.EditorLevelUtils.add_level_to_world(world, path, unreal.LevelStreamingAlwaysLoaded):
+            added.append(path)
+        else:
+            present += 1
+    if added:
+        # an added sublevel becomes the editor's current level, and "save the current level" then saves the sublevel,
+        # not the map that lists it (2026-11-21): save the persistent map by name
+        if not unreal.EditorLoadingAndSavingUtils.save_map(world, MAP):
+            raise RuntimeError("could not save " + MAP)
+        log("saved %s (stages: sublevels)" % MAP)
+    log("sublevels: %d already listed, added %s" % (present, added or "none"))
+
+
 def run_stages(world, actors, todo):
     if "ground" in todo:
         build_ground(world, actors)
@@ -1411,6 +1598,8 @@ def run_stages(world, actors, todo):
         build_training(world, actors)
     if "light" in todo:
         build_light(world, actors)
+    if "outskirts" in todo:
+        build_outskirts(world, actors)
 
 
 def remove_sectors(actors, names):
@@ -1438,6 +1627,9 @@ def main():
         return
     if todo == ["split"]:
         split_map(levels, actors, read_levels())
+        return
+    if todo == ["sublevels"]:
+        ensure_sublevels(levels, actors, read_levels())
         return
     gone = [s.strip() for s in os.environ.get("BAY_REMOVE", "").split(",") if s.strip()]
     split = assets.does_directory_exist(DISTRICTS)
@@ -1491,6 +1683,8 @@ def main():
             entry(district)["structures"].add(name)
     if "country" in district_todo:
         entry("Country")
+    if "outskirts" in district_todo:
+        entry("Outskirts")
     made = []
     for district in sorted(plan):
         path = info["levels"].get(district, "%s/WSPC2_Bay_%s" % (DISTRICTS, district))
@@ -1500,17 +1694,14 @@ def main():
         ONLY_SECTORS, ONLY_STRUCTURES = plan[district]["sectors"], plan[district]["structures"]
         remove_sectors(actors, [g for g in gone if (info["sectors"].get(g) or district_of_name(g)) == district])
         steps = [t for t in district_todo if (t != "country" or district == "Country")
+                 and (t != "outskirts" or district == "Outskirts")
                  and (t not in ("sectors", "buildings", "props") or ONLY_SECTORS)
                  and (t != "structures" or ONLY_STRUCTURES)]
         run_stages(world, actors, steps)
         save_map(levels, actors, path, steps or ["remove"])
     ONLY_SECTORS = ONLY_STRUCTURES = None
     if made:
-        world = open_map(levels, MAP)
-        for path in made:
-            unreal.EditorLevelUtils.add_level_to_world(world, path, unreal.LevelStreamingAlwaysLoaded)
-            log("added the new sublevel %s to %s" % (path, MAP))
-        save_map(levels, actors, MAP, ["sublevels"])
+        log("new sublevels %s: run build.ps1 -Stages sublevels (on its own) to list them in %s" % (made, MAP))
 
 
 try:
