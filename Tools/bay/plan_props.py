@@ -46,7 +46,7 @@ import groundmesh
 import roadgeom
 import sectors
 import structures
-from common import CURB_M, DATA, load_json
+from common import CURB_M, DATA, PROJECT, load_json
 from sectors import SECTORS
 
 SEED = 4711
@@ -72,6 +72,7 @@ LAMP_SPACING_M = 32.0
 TREE_SPACING_M = 13.0
 METER_SPACING_M = 6.4       # one parking bay
 NO_METER_DISTRICTS = ("suburb", "victorian", "industrial", "estate")   # free kerbside parking: no meters
+CHINATOWN_RULES = os.path.join(PROJECT, "Tools", "scenery", "chinatown_props_rules.json")
 BOLLARD_SPACING_M = 2.6
 JUNCTION_CLEAR_M = 9.0      # nothing but signals this close to where a junction begins
 PARK_TREE_EVERY_M2 = 75.0   # one tree for this much lawn
@@ -517,6 +518,55 @@ def main():
                     if put(trees, rng.choice(TREES), x, y, walk_z(x, y) - 0.08, rng.uniform(0, 360), rng.uniform(0.85, 1.25), radius=2.0, force=True):
                         placed += 1
             count["garden tree"] = count.get("garden tree", 0) + placed
+
+    # ---- the Oriental quarter (district "chinatown", zoning 2026-11-21): signboards, lantern clusters and door
+    # lanterns on the street fronts of its buildings. The rules and the models are the Antigravity agent's
+    # (Tools/scenery/chinatown_props_rules.json; models in the git-ignored /Game/Scenery/Imported: a model that is not
+    # in the project is left out). A building's street front is its plan's corners[0] -> corners[1]; "out" points
+    # from that front to the street. The cross-street garlands of the rules are not placed yet.
+    if SECTORS[name].get("district") == "chinatown" and os.path.exists(lots_path) and os.path.exists(CHINATOWN_RULES):
+        with open(CHINATOWN_RULES) as f:
+            rules = json.load(f)
+        have = {k: v["asset_path"] for k, v in rules["assets"].items()
+                if os.path.exists(os.path.join(PROJECT, "Content", v["asset_path"][len("/Game/"):] + ".uasset"))}
+        with open(lots_path) as f:
+            fronts = json.load(f)["buildings"]
+        signs, clusters = [], []
+        r_sign, r_cluster, r_single = (rules["rules"][k] for k in ("facade_signboards", "facade_lantern_clusters", "entrance_lantern_singles"))
+        for b in fronts:
+            (ax, ay), (bx, by) = b["corners"][0], b["corners"][1]
+            width = math.hypot(bx - ax, by - ay)
+            if width < 1.0:
+                continue
+            tx, ty = (bx - ax) / width, (by - ay) / width
+            ox, oy = ty, -tx                                         # out of the front, onto the sidewalk
+            mx, my = (ax + bx) / 2.0, (ay + by) / 2.0
+            yaw = ue_yaw(tx, ty)
+            signed = False
+            if ("SM_Chinatown_Signboards" in have and width >= r_sign["min_facade_width_m"] and b["h"] >= r_sign["min_building_height_m"]
+                    and rng.random() < r_sign["placement_probability"]
+                    and all(math.hypot(mx - sx, my - sy) >= r_sign["min_center_spacing_along_block_m"] for sx, sy in signs)):
+                s = rng.uniform(*r_sign["scale_range"])
+                x, y = mx + ox * 1.10 * s, my + oy * 1.10 * s
+                if put(props, have["SM_Chinatown_Signboards"], x, y, b["z"] + rng.uniform(3.8, 5.2), yaw, s, radius=0.1, force=True):
+                    signs.append((mx, my))
+                    signed = True
+                    tally("chinatown sign", True)
+            if ("SM_Chinatown_LanternCluster" in have and not signed and width >= r_cluster["min_facade_width_m"]
+                    and all(math.hypot(mx - sx, my - sy) >= r_cluster["min_center_spacing_along_block_m"] for sx, sy in clusters)):
+                x, y = mx + ox * 0.95, my + oy * 0.95
+                if put(props, have["SM_Chinatown_LanternCluster"], x, y, b["z"] + rng.uniform(3.4, 4.2), yaw,
+                       rng.uniform(*r_cluster["scale_range"]), radius=0.1, force=True):
+                    clusters.append((mx, my))
+                    tally("chinatown lanterns", True)
+            if "SM_Chinatown_LanternSingle" in have and width >= r_single["min_facade_width_m"]:
+                s = rng.uniform(1.0, 2.0)
+                while s < width - 1.0:
+                    if rng.random() < r_single["placement_probability_per_slot"]:
+                        x, y = ax + tx * s + ox * 0.65, ay + ty * s + oy * 0.65
+                        tally("chinatown lantern", put(props, have["SM_Chinatown_LanternSingle"], x, y, b["z"] + rng.uniform(2.8, 3.2),
+                                                        rng.uniform(0.0, 360.0), rng.uniform(*r_single["scale_range"]), radius=0.1, force=True))
+                    s += rng.uniform(*r_single["pair_or_spacing_m"])
 
     # nothing on or under a viaduct: its deck, its fills and the strip beside its barriers (the ground under a deck's
     # end is level with the deck, and a bench placed on the lawn's edge there stood on the road)
