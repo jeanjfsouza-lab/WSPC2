@@ -136,6 +136,7 @@ void AWSPC2Pawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AWSPC2Pawn, bSirenOn);
+	DOREPLIFETIME(AWSPC2Pawn, SirenMode);
 }
 
 void AWSPC2Pawn::SetCrewLayout(const FVector& GunnerSeatLocation, const FVector& LightBarCentre, float LightHalfSpacing)
@@ -209,28 +210,102 @@ void AWSPC2Pawn::UnPossessed()
 
 void AWSPC2Pawn::SetSiren(bool bOn)
 {
-	if (HasAuthority() && bSirenOn != bOn)
+	if (!HasAuthority())
 	{
-		bSirenOn = bOn;
+		return;
+	}
+	if (!bOn)
+	{
+		SetSirenMode(EWSPC2SirenMode::Off);
+	}
+	else
+	{
+		SetSirenMode(LastActiveSirenMode == EWSPC2SirenMode::Off ? EWSPC2SirenMode::Wail : LastActiveSirenMode);
+	}
+}
 
-		// the server does not receive its own replication, so run the handler by hand
+void AWSPC2Pawn::SetSirenMode(EWSPC2SirenMode NewMode)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	const bool bNewOn = (NewMode != EWSPC2SirenMode::Off);
+	if (NewMode != EWSPC2SirenMode::Off)
+	{
+		LastActiveSirenMode = NewMode;
+	}
+	if (SirenMode != NewMode || bSirenOn != bNewOn)
+	{
+		SirenMode = NewMode;
+		bSirenOn = bNewOn;
 		OnRep_Siren();
+	}
+}
+
+EWSPC2SirenMode AWSPC2Pawn::CycleSirenMode()
+{
+	if (!HasAuthority())
+	{
+		return SirenMode;
+	}
+	EWSPC2SirenMode Next = EWSPC2SirenMode::Wail;
+	switch (SirenMode)
+	{
+	case EWSPC2SirenMode::Wail:   Next = EWSPC2SirenMode::Yelp; break;
+	case EWSPC2SirenMode::Yelp:   Next = EWSPC2SirenMode::Phaser; break;
+	case EWSPC2SirenMode::Phaser: Next = EWSPC2SirenMode::Wail; break;
+	default:                      Next = EWSPC2SirenMode::Wail; break;
+	}
+	SetSirenMode(Next);
+	return SirenMode;
+}
+
+const TCHAR* AWSPC2Pawn::GetSirenModeName() const
+{
+	switch (SirenMode)
+	{
+	case EWSPC2SirenMode::Wail:   return TEXT("WAIL");
+	case EWSPC2SirenMode::Yelp:   return TEXT("YELP");
+	case EWSPC2SirenMode::Phaser: return TEXT("PHASER");
+	default:                      return TEXT("off");
+	}
+}
+
+void AWSPC2Pawn::TriggerAirhorn()
+{
+	if (HasAuthority())
+	{
+		MulticastPlayAirhorn();
+	}
+}
+
+void AWSPC2Pawn::MulticastPlayAirhorn_Implementation()
+{
+	if (VehicleAudio)
+	{
+		VehicleAudio->PlayAirhornBlast();
 	}
 }
 
 void AWSPC2Pawn::OnRep_Siren()
 {
+	if (SirenMode != EWSPC2SirenMode::Off)
+	{
+		LastActiveSirenMode = SirenMode;
+	}
 	SirenFlashTime = 0.0f;
 	UpdateSirenLights();
-	OnSirenChanged(bSirenOn);
+	OnSirenChanged(IsSirenOn());
 }
 
 void AWSPC2Pawn::UpdateSirenLights()
 {
-	// alternate the two sides four times a second
-	const bool bLeftPhase = FMath::Fmod(SirenFlashTime, 0.5f) < 0.25f;
+	// alternate faster on Yelp/Phaser to visually reflect the siren cadence
+	const float HalfPeriod = (SirenMode == EWSPC2SirenMode::Phaser) ? 0.09f : (SirenMode == EWSPC2SirenMode::Yelp ? 0.16f : 0.25f);
+	const bool bLeftPhase = FMath::Fmod(SirenFlashTime, HalfPeriod * 2.0f) < HalfPeriod;
 	const float SirenHealth = VehicleDamage ? VehicleDamage->GetSirenLightHealthFactor() : 1.0f;
-	const bool bSirenFunctional = bSirenOn && SirenHealth > 0.0f;
+	const bool bSirenFunctional = IsSirenOn() && SirenHealth > 0.0f;
 
 	SirenLightLeft->SetVisibility(bSirenFunctional && bLeftPhase);
 	SirenLightRight->SetVisibility(bSirenFunctional && !bLeftPhase);
@@ -392,6 +467,11 @@ void AWSPC2Pawn::UpdateChaseOrbit(float Delta)
 	BackSpringArm->SetRelativeRotation(FRotator(-ChaseOrbitPitch, ChaseOrbitYaw, 0.0f));
 }
 
+float AWSPC2Pawn::GetActiveBaseRearFriction() const
+{
+	return GetDefault<UWSPC2VehicleTuning>()->RearFriction;
+}
+
 void AWSPC2Pawn::ApplyDriveAssists(float Delta)
 {
 	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
@@ -421,15 +501,16 @@ void AWSPC2Pawn::ApplyDriveAssists(float Delta)
 		Body->AddForce(-Velocity.GetSafeNormal() * Accel * Body->GetMass());
 	}
 
-	// power oversteer: the rear tyres give up some grip at full throttle, less as the speed rises
+	// power oversteer: the rear tyres give up some grip at full throttle on RWD/AWD cars, less as the speed rises
+	const EWSPC2Drivetrain Drive = GetActiveDrivetrain();
 	float RearScale = 1.0f;
-	if (Tuning->RearThrottleGripLoss > 0.0f && bForward)
+	if (Drive != EWSPC2Drivetrain::FWD && Tuning->RearThrottleGripLoss > 0.0f && bForward)
 	{
 		const float Span = FMath::Max(Tuning->RearThrottleGripLossGoneAboveKmh - Tuning->RearThrottleGripLossFullBelowKmh, 1.0f);
 		const float SpeedFade = 1.0f - FMath::Clamp((SpeedKmh - Tuning->RearThrottleGripLossFullBelowKmh) / Span, 0.0f, 1.0f);
-		// only while turning: on a straight line it would just spin the wheels and slow the launch
 		const float Turning = FMath::Clamp(FMath::Abs(ChaosVehicleMovement->GetSteeringInput()) * 2.0f, 0.0f, 1.0f);
-		RearScale = 1.0f - Tuning->RearThrottleGripLoss * FMath::Clamp(ChaosVehicleMovement->GetThrottleInput(), 0.0f, 1.0f) * SpeedFade * Turning;
+		const float DriveMult = (Drive == EWSPC2Drivetrain::AWD) ? 0.35f : 1.0f;
+		RearScale = 1.0f - Tuning->RearThrottleGripLoss * DriveMult * FMath::Clamp(ChaosVehicleMovement->GetThrottleInput(), 0.0f, 1.0f) * SpeedFade * Turning;
 	}
 
 	// a locked rear axle also lets go sideways, so the handbrake swings the tail out
@@ -441,11 +522,12 @@ void AWSPC2Pawn::ApplyDriveAssists(float Delta)
 	if (FMath::Abs(RearScale - AppliedRearGripScale) > 0.005f)
 	{
 		AppliedRearGripScale = RearScale;
+		const float BaseRearFric = GetActiveBaseRearFriction();
 		const UWSPC2VehicleDamageComponent* Damage = GetVehicleDamage();
 		for (int32 WheelIndex = 2; WheelIndex < FMath::Min(4, ChaosVehicleMovement->WheelSetups.Num()); ++WheelIndex)
 		{
 			const float DamageScale = Damage ? Damage->GetWheelFrictionScale(WheelIndex) : 1.0f;
-			ChaosVehicleMovement->SetWheelFrictionMultiplier(WheelIndex, Tuning->RearFriction * DamageScale * RearScale);
+			ChaosVehicleMovement->SetWheelFrictionMultiplier(WheelIndex, BaseRearFric * DamageScale * RearScale);
 		}
 	}
 }

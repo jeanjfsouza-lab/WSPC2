@@ -14,6 +14,8 @@
 #include "WSPC2Gunnery.h"
 #include "WSPC2CrewComponent.h"
 #include "WSPC2Mission.h"
+#include "WSPC2TestTrackDirector.h"
+#include "WSPC2VehicleAudioComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
@@ -65,6 +67,7 @@ void AWSPC2PlayerController::BeginPlay()
 	bTestDamage = IsLocalPlayerController() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestDamage"));
 	bTestFleet = IsLocalPlayerController() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestFleet"));
 	bTestGunnery = IsLocalPlayerController() && HasAuthority() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestGunnery"));
+	bTestTrackAudit = IsLocalPlayerController() && HasAuthority() && FParse::Param(FCommandLine::Get(), TEXT("WSPC2TestTrackAudit"));
 
 	// -WSPC2Mission=<Id>: starts a campaign mission once the map has settled (on the server's own player)
 	FString StartMissionId;
@@ -380,6 +383,21 @@ void AWSPC2PlayerController::SetupCrewInput()
 	CrewMappingContext->MapKey(CycleVehicleAction, EKeys::V);
 	CrewMappingContext->MapKey(CycleVehicleAction, EKeys::Gamepad_LeftThumbstick);
 
+	PrevVehicleAction = NewObject<UInputAction>(this, TEXT("IA_PrevVehicle"));
+	CrewMappingContext->MapKey(PrevVehicleAction, EKeys::B);
+
+	CategoryVehicleAction = NewObject<UInputAction>(this, TEXT("IA_CategoryVehicle"));
+	CrewMappingContext->MapKey(CategoryVehicleAction, EKeys::N);
+
+	SirenModeAction = NewObject<UInputAction>(this, TEXT("IA_SirenMode"));
+	CrewMappingContext->MapKey(SirenModeAction, EKeys::J);
+
+	AirhornAction = NewObject<UInputAction>(this, TEXT("IA_Airhorn"));
+	CrewMappingContext->MapKey(AirhornAction, EKeys::K);
+
+	ShowroomSwapAction = NewObject<UInputAction>(this, TEXT("IA_ShowroomSwap"));
+	CrewMappingContext->MapKey(ShowroomSwapAction, EKeys::Enter);
+
 	WeaponPrevAction = NewObject<UInputAction>(this, TEXT("IA_WeaponPrev"));
 	CrewMappingContext->MapKey(WeaponPrevAction, EKeys::Q);
 	CrewMappingContext->MapKey(WeaponPrevAction, EKeys::Gamepad_DPad_Left);
@@ -424,6 +442,11 @@ void AWSPC2PlayerController::SetupCrewInput()
 		EnhancedInput->BindAction(SirenAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnSiren);
 		EnhancedInput->BindAction(CameraAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnCamera);
 		EnhancedInput->BindAction(CycleVehicleAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnCycleVehicle);
+		EnhancedInput->BindAction(PrevVehicleAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnPrevVehicle);
+		EnhancedInput->BindAction(CategoryVehicleAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnCategoryVehicle);
+		EnhancedInput->BindAction(SirenModeAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnSirenMode);
+		EnhancedInput->BindAction(AirhornAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnAirhorn);
+		EnhancedInput->BindAction(ShowroomSwapAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnShowroomSwap);
 		EnhancedInput->BindAction(WeaponPrevAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnWeaponPrev);
 		EnhancedInput->BindAction(WeaponNextAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnWeaponNext);
 		EnhancedInput->BindAction(LockAction, ETriggerEvent::Started, this, &AWSPC2PlayerController::OnLock);
@@ -466,6 +489,31 @@ void AWSPC2PlayerController::OnCamera(const FInputActionValue& Value)
 void AWSPC2PlayerController::OnCycleVehicle(const FInputActionValue& Value)
 {
 	ServerCycleVehiclePreset();
+}
+
+void AWSPC2PlayerController::OnPrevVehicle(const FInputActionValue& Value)
+{
+	ServerCycleVehicleDirection(-1);
+}
+
+void AWSPC2PlayerController::OnCategoryVehicle(const FInputActionValue& Value)
+{
+	ServerCycleVehicleCategory();
+}
+
+void AWSPC2PlayerController::OnSirenMode(const FInputActionValue& Value)
+{
+	ServerCycleSirenMode();
+}
+
+void AWSPC2PlayerController::OnAirhorn(const FInputActionValue& Value)
+{
+	ServerTriggerAirhorn();
+}
+
+void AWSPC2PlayerController::OnShowroomSwap(const FInputActionValue& Value)
+{
+	ServerSwapNearestShowroom();
 }
 
 bool AWSPC2PlayerController::HoldsTheGun() const
@@ -802,8 +850,10 @@ void AWSPC2PlayerController::TickTestDrive(float Delta)
 			}
 			if (TestDriveClock > 4.0f)
 			{
-				UE_LOG(LogWSPC2, Log, TEXT("TestDrive: full-lock tap at 110 km/h, hands off: peak sideslip %.1f deg, peak yaw rate %.0f deg/s; after 3.5 s slip %.1f deg, yaw rate %.0f deg/s (%s)"),
-					TestPeakSlip, TestPeakYawRate, Slip, YawRate, (AbsSlip < 3.0f && FMath::Abs(YawRate) < 5.0f) ? TEXT("settled") : TEXT("NOT settled"));
+				const AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(Car);
+				UE_LOG(LogWSPC2, Log, TEXT("TestDrive: full-lock tap at 110 km/h, hands off: peak sideslip %.1f deg, peak yaw rate %.0f deg/s; after 3.5 s slip %.1f deg, yaw rate %.0f deg/s (%s) | steerWheel=(vis=%d, deg=%.1f)"),
+					TestPeakSlip, TestPeakYawRate, Slip, YawRate, (AbsSlip < 3.0f && FMath::Abs(YawRate) < 5.0f) ? TEXT("settled") : TEXT("NOT settled"),
+					(SportsCar && SportsCar->HasSteeringWheelMesh()) ? 1 : 0, SportsCar ? SportsCar->GetDrawnSteeringWheelDeg() : 0.0f);
 
 				TestPlaceCar(Car, 500.0f);
 				TestDrivePhase = 8;
@@ -967,14 +1017,20 @@ void AWSPC2PlayerController::TickTestDamage(float Delta)
 	auto LogDamageSnapshot = [Car, Dmg](const TCHAR* Label)
 	{
 		UE_LOG(LogWSPC2, Log,
-			TEXT("TestDamage [%s]: tier=%s hull=%.1f%% hits=%d prop=$%d flat=%d flPunct=%d camber0=%.1f drop0=%.1f engFactor=%.2f thrMult=%.2f siren=%.2f steerPull=%.3f primer=%.2f metal=%.2f dent=%.2f glass=%d sideGlass=%d lightbar=%d hlHousing=%d steam=%d smoke=%d rimSpark=%d speed=%.1f zones(F%.2f/R%.2f/L%.2f/Rt%.2f/T%.2f)"),
+			TEXT("TestDamage [%s]: tier=%s wrecked=%d reason=%s hull=%.1f%% hits=%d prop=$%d flat=%d det=%d bent0=%.2f engIntrus=%.1f%% twist=%.1f/%.1f deg camber0=%.1f drop0=%.1f engFactor=%.2f thrMult=%.2f siren=%.2f steerPull=%.3f primer=%.2f metal=%.2f dent=%.2f glass=%d rimSpark=%d speed=%.1f"),
 			Label,
 			Dmg->GetDamageStageName(),
+			Dmg->IsWrecked() ? 1 : 0,
+			Dmg->GetDisableReasonName(),
 			Dmg->GetHealthPercent(),
 			Dmg->GetCollisionCount(),
 			Dmg->GetPropertyDamageDollars(),
 			Dmg->GetPuncturedWheelCount(),
-			Dmg->IsWheelPunctured(0) ? 1 : 0,
+			Dmg->GetDetachedWheelCount(),
+			Dmg->GetWheelBentAmount(0),
+			Dmg->GetEngineBlockIntrusionPct(),
+			Dmg->GetMaxChassisTwistDeg(),
+			Dmg->GetFloorTouchTwistDeg(),
 			Dmg->GetWheelCamberDamageDeg(0),
 			Dmg->GetWheelVisualDropCm(0),
 			Dmg->GetEngineHealthTorqueFactor(),
@@ -985,18 +1041,8 @@ void AWSPC2PlayerController::TickTestDamage(float Delta)
 			Dmg->GetCurrentMetalThreshold(),
 			Dmg->GetCurrentDentStrength(),
 			Dmg->GetGlassCrackStage(),
-			Dmg->IsSideGlassFractured() ? 1 : 0,
-			Dmg->IsLightbarFractured() ? 1 : 0,
-			Dmg->IsHeadlightHousingFractured() ? 1 : 0,
-			Dmg->IsHoodSteamActive() ? 1 : 0,
-			Dmg->IsHoodSmokeActive() ? 1 : 0,
 			Dmg->IsRimSparkActive() ? 1 : 0,
-			Car->GetSpeedKmh(),
-			Dmg->GetZoneDamage(EWSPC2DamageZone::Front),
-			Dmg->GetZoneDamage(EWSPC2DamageZone::Rear),
-			Dmg->GetZoneDamage(EWSPC2DamageZone::Left),
-			Dmg->GetZoneDamage(EWSPC2DamageZone::Right),
-			Dmg->GetZoneDamage(EWSPC2DamageZone::Roof));
+			Car->GetSpeedKmh());
 	};
 
 	// Phase 0: build elevated strip + concrete barrier at X=230m, settle springs, verify Pristine
@@ -1135,51 +1181,113 @@ void AWSPC2PlayerController::TickTestDamage(float Delta)
 		return;
 	}
 
-	// Phase 6: wait 0.5s, apply roof rollover + wreck impact, verify Wrecked + lightbar fracture + stall
+	// Phase 6: Test Rule 2 — Bent wheel & loss of 2 wheels disables vehicle, and stall check
 	if (TestDamagePhase == 6)
 	{
-		if (TestDamageClock > 0.5f)
+		if (TestDamageClock > 0.4f && TestDamageClock - Delta <= 0.4f)
 		{
-			Car->DoBrake(0.0f);
+			Dmg->RepairAll();
 			TestPlaceCar(Car, 100.0f);
 
-			const FVector RoofWorld = Car->GetActorTransform().TransformPosition(FVector(-10.0f, 0.0f, 138.0f));
-			Dmg->ApplyDirectImpact(RoofWorld, -Car->GetActorUpVector(), 95.0f, 3600000.0f);
+			const FVector FLWorld = Car->GetActorTransform().TransformPosition(FVector(142.0f, -78.0f, 35.0f));
+			const FVector FRWorld = Car->GetActorTransform().TransformPosition(FVector(142.0f, 78.0f, 35.0f));
+			Dmg->ApplyDirectImpact(FLWorld, -Car->GetActorRightVector(), 62.0f, 2200000.0f);
+			LogDamageSnapshot(TEXT("BentWheelFL"));
 
-			if (!Dmg->IsWrecked())
+			for (int32 Retry = 0; Retry < 2 && !Dmg->IsWheelDetached(0); ++Retry)
 			{
-				const FVector FrontWorld = Car->GetActorTransform().TransformPosition(FVector(230.0f, 20.0f, 52.0f));
-				Dmg->ApplyDirectImpact(FrontWorld, -Car->GetActorForwardVector(), 110.0f, 4000000.0f);
+				Dmg->ApplyDirectImpact(FLWorld, -Car->GetActorRightVector(), 122.0f, 4600000.0f);
 			}
+			for (int32 Retry = 0; Retry < 2 && !Dmg->IsWheelDetached(1); ++Retry)
+			{
+				Dmg->ApplyDirectImpact(FRWorld, Car->GetActorRightVector(), 122.0f, 4600000.0f);
+			}
+			LogDamageSnapshot(TEXT("Rule2_TwoWheelsLost"));
+		}
 
-			LogDamageSnapshot(TEXT("AfterWrecked"));
+		Car->DoBrake(0.0f);
+		Car->DoSteering(0.0f);
+		Car->DoThrottle(TestDamageClock > 0.5f ? 1.0f : 0.0f);
+
+		if (TestDamageClock > 1.8f)
+		{
+			LogDamageSnapshot(TEXT("Rule2_StallThrottleHold"));
+			Car->DoThrottle(0.0f);
 			TestDamagePhase = 7;
 			TestDamageClock = 0.0f;
 		}
 		return;
 	}
 
-	// Phase 7: hold full throttle on wrecked car for 2.0s to confirm engine stall immobilizes drive torque
+	// Phase 7: Test Rule 1 — Engine block intrusion > 30% disables vehicle
 	if (TestDamagePhase == 7)
 	{
+		if (TestDamageClock > 0.3f && TestDamageClock - Delta <= 0.3f)
+		{
+			Dmg->RepairAll();
+			TestPlaceCar(Car, 100.0f);
+
+			const FVector FrontBumper = Car->GetActorTransform().TransformPosition(FVector(215.0f, 0.0f, 55.0f));
+			for (int32 Strike = 0; Strike < 4 && !Dmg->IsWrecked(); ++Strike)
+			{
+				Dmg->ApplyDirectImpact(FrontBumper, -Car->GetActorForwardVector(), 108.0f, 3900000.0f);
+			}
+			LogDamageSnapshot(TEXT("Rule1_EngineIntrusion"));
+		}
+
 		Car->DoBrake(0.0f);
 		Car->DoSteering(0.0f);
-		Car->DoThrottle(1.0f);
+		Car->DoThrottle(TestDamageClock > 0.4f ? 1.0f : 0.0f);
 
-		if (TestDamageClock > 2.0f)
+		if (TestDamageClock > 1.7f)
 		{
-			LogDamageSnapshot(TEXT("WreckedThrottleHold"));
+			LogDamageSnapshot(TEXT("Rule1_StallThrottleHold"));
 			Car->DoThrottle(0.0f);
-			Car->DoResetVehicle();
-			TestPlaceCar(Car, 100.0f);
 			TestDamagePhase = 8;
 			TestDamageClock = 0.0f;
 		}
 		return;
 	}
 
-	// Phase 8: wait 0.4s after RepairAll/DoResetVehicle, log Pristine restoration, then accelerate 2.2s to verify Chaos torque recovery
+	// Phase 8: Test Rule 3 — Chassis torsion/twist > FloorTouchTwistDeg disables vehicle, then verify full RepairAll()
 	if (TestDamagePhase == 8)
+	{
+		if (TestDamageClock > 0.3f && TestDamageClock - Delta <= 0.3f)
+		{
+			Dmg->RepairAll();
+			TestPlaceCar(Car, 100.0f);
+
+			const FVector SideRoofHit = Car->GetActorTransform().TransformPosition(FVector(15.0f, -86.0f, 118.0f));
+			const FVector RoofHit = Car->GetActorTransform().TransformPosition(FVector(-12.0f, 0.0f, 138.0f));
+			for (int32 Strike = 0; Strike < 5 && !Dmg->IsWrecked(); ++Strike)
+			{
+				Dmg->ApplyDirectImpact(SideRoofHit, (Car->GetActorRightVector() - Car->GetActorUpVector() * 0.5f).GetSafeNormal(), 105.0f, 3700000.0f);
+				if (!Dmg->IsWrecked())
+				{
+					Dmg->ApplyDirectImpact(RoofHit, -Car->GetActorUpVector(), 95.0f, 3500000.0f);
+				}
+			}
+			LogDamageSnapshot(TEXT("Rule3_ChassisTwisted"));
+		}
+
+		Car->DoBrake(0.0f);
+		Car->DoSteering(0.0f);
+		Car->DoThrottle(TestDamageClock > 0.4f ? 1.0f : 0.0f);
+
+		if (TestDamageClock > 1.7f)
+		{
+			LogDamageSnapshot(TEXT("Rule3_StallThrottleHold"));
+			Car->DoThrottle(0.0f);
+			Car->DoResetVehicle();
+			TestPlaceCar(Car, 100.0f);
+			TestDamagePhase = 9;
+			TestDamageClock = 0.0f;
+		}
+		return;
+	}
+
+	// Phase 9: wait 0.4s after RepairAll/DoResetVehicle, log Pristine restoration, then accelerate 2.2s to verify Chaos torque recovery
+	if (TestDamagePhase == 9)
 	{
 		Car->DoBrake(0.0f);
 		Car->DoSteering(0.0f);
@@ -1269,7 +1377,98 @@ void AWSPC2PlayerController::ServerCycleVehiclePreset_Implementation()
 	if (AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(GetCurrentVehicle()))
 	{
 		SportsCar->CycleVehiclePreset();
-		ClientNotify(FString::Printf(TEXT("Vehicle: %s"), *SportsCar->GetActiveVehicleDisplayName()));
+		const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+		ClientNotify(FString::Printf(TEXT("Vehicle: %s [%s | %s]"),
+			*SportsCar->GetActiveVehicleDisplayName(),
+			*SportsCar->GetActiveRoleGroup(),
+			Audio ? *Audio->GetActiveEngineFamilyName() : *SportsCar->GetActiveAudioProfile()));
+	}
+}
+
+void AWSPC2PlayerController::ServerCycleVehicleDirection_Implementation(int32 Direction)
+{
+	if (AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(GetCurrentVehicle()))
+	{
+		SportsCar->CycleVehiclePresetDirection(Direction >= 0 ? 1 : -1);
+		const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+		ClientNotify(FString::Printf(TEXT("Vehicle: %s [%s | %s]"),
+			*SportsCar->GetActiveVehicleDisplayName(),
+			*SportsCar->GetActiveRoleGroup(),
+			Audio ? *Audio->GetActiveEngineFamilyName() : *SportsCar->GetActiveAudioProfile()));
+	}
+}
+
+void AWSPC2PlayerController::ServerCycleVehicleCategory_Implementation()
+{
+	if (AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(GetCurrentVehicle()))
+	{
+		SportsCar->CycleVehicleCategory();
+		const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+		ClientNotify(FString::Printf(TEXT("Category %s -> %s [%s]"),
+			*SportsCar->GetActiveRoleGroup(),
+			*SportsCar->GetActiveVehicleDisplayName(),
+			Audio ? *Audio->GetActiveEngineFamilyName() : *SportsCar->GetActiveAudioProfile()));
+	}
+}
+
+void AWSPC2PlayerController::ServerCycleSirenMode_Implementation()
+{
+	if (AWSPC2Pawn* Car = GetCurrentVehicle())
+	{
+		Car->CycleSirenMode();
+		ClientNotify(FString::Printf(TEXT("Sirene: %s"), Car->GetSirenModeName()));
+	}
+}
+
+void AWSPC2PlayerController::ServerTriggerAirhorn_Implementation()
+{
+	if (AWSPC2Pawn* Car = GetCurrentVehicle())
+	{
+		Car->TriggerAirhorn();
+	}
+}
+
+void AWSPC2PlayerController::ServerRepairCurrentVehicle_Implementation()
+{
+	if (AWSPC2Pawn* Car = GetCurrentVehicle())
+	{
+		if (UWSPC2VehicleDamageComponent* Damage = Car->GetVehicleDamage())
+		{
+			Damage->RepairAll();
+			ClientNotify(TEXT("Veiculo reparado!"));
+		}
+	}
+}
+
+void AWSPC2PlayerController::ServerSwapNearestShowroom_Implementation()
+{
+	AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(GetCurrentVehicle());
+	AWSPC2TestTrackDirector* Director = AWSPC2TestTrackDirector::Get(GetWorld());
+	if (!SportsCar || !Director)
+	{
+		return;
+	}
+
+	FName NearestPresetId = NAME_None;
+	FString NearestDisplayName;
+	if (Director->FindNearestShowroomPreset(SportsCar->GetActorLocation(), 1000.0f, NearestPresetId, NearestDisplayName))
+	{
+		if (SportsCar->SetVehiclePreset(NearestPresetId))
+		{
+			const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+			ClientNotify(FString::Printf(TEXT("Showroom -> %s [%s | %s]"),
+				*SportsCar->GetActiveVehicleDisplayName(),
+				*SportsCar->GetActiveRoleGroup(),
+				Audio ? *Audio->GetActiveEngineFamilyName() : *SportsCar->GetActiveAudioProfile()));
+		}
+		else
+		{
+			ClientNotify(FString::Printf(TEXT("Preset indisponivel no momento: %s"), *NearestPresetId.ToString()));
+		}
+	}
+	else
+	{
+		ClientNotify(TEXT("Aproxime-se de uma vaga do Showroom (<=10m) e aperte [Enter]"));
 	}
 }
 
@@ -1594,6 +1793,73 @@ void AWSPC2PlayerController::NextVehicle()
 	ServerCycleVehiclePreset();
 }
 
+void AWSPC2PlayerController::PrevVehicle()
+{
+	ServerCycleVehicleDirection(-1);
+}
+
+void AWSPC2PlayerController::NextCategory()
+{
+	ServerCycleVehicleCategory();
+}
+
+void AWSPC2PlayerController::SirenMode()
+{
+	ServerCycleSirenMode();
+}
+
+void AWSPC2PlayerController::Airhorn()
+{
+	ServerTriggerAirhorn();
+}
+
+void AWSPC2PlayerController::RepairCar()
+{
+	ServerRepairCurrentVehicle();
+}
+
+void AWSPC2PlayerController::ListVehicles()
+{
+	const TArray<FWSPC2VehicleProfileSpec>& All = UWSPC2VehicleProfile::GetBuiltinPresets();
+	int32 Loadable = 0;
+	for (const FWSPC2VehicleProfileSpec& Spec : All)
+	{
+		const bool bOk = UWSPC2VehicleProfile::CanLoadPresetAssets(Spec);
+		if (bOk)
+		{
+			++Loadable;
+		}
+		UE_LOG(LogWSPC2, Log, TEXT("Preset [%s] %-28s | %-34s | %4.0f HP | %4.0f Nm | Audio=%-18s | Loadable=%s"),
+			*UWSPC2VehicleProfile::GetNormalizedRoleGroup(Spec),
+			*Spec.PresetId.ToString(),
+			*Spec.DisplayName.ToString(),
+			Spec.RealHorsepower,
+			Spec.RealMaxTorqueNm,
+			*Spec.AudioProfile,
+			bOk ? TEXT("YES") : TEXT("no"));
+	}
+	ClientNotify(FString::Printf(TEXT("Catalog: %d loadable / %d total presets (ver LogWSPC2)"), Loadable, All.Num()));
+}
+
+void AWSPC2PlayerController::DamageDemo()
+{
+	AWSPC2Pawn* Car = GetCurrentVehicle();
+	if (!Car)
+	{
+		return;
+	}
+	if (UWSPC2VehicleDamageComponent* Damage = Car->GetVehicleDamage())
+	{
+		const FVector HitPt = Car->GetActorLocation() + Car->GetActorForwardVector() * 170.0f + Car->GetActorUpVector() * 65.0f;
+		Damage->ApplyDirectImpact(HitPt, -Car->GetActorForwardVector(), 130.0f, 2200000.0f);
+		Damage->PunctureWheel(0);
+		ClientNotify(FString::Printf(TEXT("DamageDemo: Hull %.0f%% | EngIntr %.1f%% | Twist %.1f deg"),
+			Damage->GetHealthPercent(),
+			Damage->GetEngineBlockIntrusionPct(),
+			Damage->GetMaxChassisTwistDeg()));
+	}
+}
+
 void AWSPC2PlayerController::ClientNotify_Implementation(const FString& Message)
 {
 	UE_LOG(LogWSPC2, Log, TEXT("Notify: %s"), *Message);
@@ -1651,6 +1917,11 @@ void AWSPC2PlayerController::Tick(float Delta)
 	if (bTestFleet)
 	{
 		TickTestFleet(Delta);
+	}
+
+	if (bTestTrackAudit)
+	{
+		TickTestTrackAudit(Delta);
 	}
 
 	// -WSPC2TestSteerShot: parked, close-ups of the front left wheel, then quit. Checks that brakes and wheels steer
@@ -1712,32 +1983,70 @@ void AWSPC2PlayerController::Tick(float Delta)
 
 		const TCHAR* SeatName = Seat == EWSPC2Seat::Driver ? TEXT("DRIVER") : Seat == EWSPC2Seat::Gunner ? TEXT("GUNNER") : TEXT("NO SEAT");
 		const UWSPC2VehicleDamageComponent* Dmg = IsValid(Car) ? Car->GetVehicleDamage() : nullptr;
+		const UWSPC2VehicleAudioComponent* Aud = IsValid(Car) ? Car->GetVehicleAudio() : nullptr;
+		const UChaosWheeledVehicleMovementComponent* Move = IsValid(Car) ? Car->GetChaosVehicleMovement() : nullptr;
+
 		const float HullPct = Dmg ? Dmg->GetHealthPercent() : 100.0f;
 		const TCHAR* StageName = Dmg ? Dmg->GetDamageStageName() : TEXT("Pristine");
-		const float EngPct = Dmg ? Dmg->GetEngineHealthTorqueFactor() * 100.0f : 100.0f;
-		const int32 PropDollars = Dmg ? Dmg->GetPropertyDamageDollars() : 0;
 		const int32 FlatTyres = Dmg ? Dmg->GetPuncturedWheelCount() : 0;
-		const int32 ZF = Dmg ? FMath::RoundToInt(Dmg->GetZoneDamage(EWSPC2DamageZone::Front) * 100.0f) : 0;
-		const int32 ZR = Dmg ? FMath::RoundToInt(Dmg->GetZoneDamage(EWSPC2DamageZone::Rear) * 100.0f) : 0;
-		const int32 ZL = Dmg ? FMath::RoundToInt(Dmg->GetZoneDamage(EWSPC2DamageZone::Left) * 100.0f) : 0;
-		const int32 ZRt = Dmg ? FMath::RoundToInt(Dmg->GetZoneDamage(EWSPC2DamageZone::Right) * 100.0f) : 0;
-		const int32 ZT = Dmg ? FMath::RoundToInt(Dmg->GetZoneDamage(EWSPC2DamageZone::Roof) * 100.0f) : 0;
+		const int32 WheelsLost = Dmg ? Dmg->GetDetachedWheelCount() : 0;
+		const float EngIntrPct = Dmg ? Dmg->GetEngineBlockIntrusionPct() : 0.0f;
+		const float TwistDeg = Dmg ? Dmg->GetMaxChassisTwistDeg() : 0.0f;
+		const float TwistMaxDeg = Dmg ? Dmg->GetFloorTouchTwistDeg() : 10.5f;
 
 		const FString CarName = IsValid(Car) ? Car->GetActiveVehicleDisplayName() : FString(TEXT("None"));
-		const FString Status = FString::Printf(TEXT("%s  |  %s  |  %3.0f km/h  |  Siren %s  |  Hull %3.0f%% [%s]  |  Eng %3.0f%%  |  Zones F%d/R%d/L%d/Rt%d/T%d  |  Flat %d  |  Dmg $%d  |  [F/Y] seat [H] siren [C] cam [V/L3] car [R] reset"),
+		const FString RoleGroup = IsValid(Car) ? Car->GetActiveRoleGroup() : FString(TEXT("-"));
+		const FString AudioFam = Aud ? Aud->GetActiveEngineFamilyName() : (IsValid(Car) ? Car->GetActiveAudioProfile() : FString(TEXT("-")));
+		const int32 Gear = Move ? Move->GetCurrentGear() : 0;
+		const float Rpm = Move ? Move->GetEngineRotationSpeed() : 0.0f;
+		const TCHAR* SirenName = IsValid(Car) ? Car->GetSirenModeName() : TEXT("Off");
+
+		const int32 LoosePanels = Dmg ? Dmg->GetLoosePanelCount() : 0;
+		const int32 DetachedPanels = Dmg ? Dmg->GetDetachedPanelCount() : 0;
+		const int32 BrokenLights = Dmg ? Dmg->GetBrokenLightCount() : 0;
+		const float MaxDentCm = Dmg ? Dmg->GetMaxVertexDisplacementCm() : 0.0f;
+
+		const FString Status = FString::Printf(
+			TEXT("%s [%s | %s]  |  %s  |  G%d %.0f RPM  |  %3.0f km/h  |  Siren %s  |  Hull %3.0f%% [%s]  |  EngIntr %.1f%%/30%%  |  Wheels %d/2  |  Panels %d/%d  |  Lights %d/4  |  Dent %.0fcm  |  Twist %.1f/%.1f deg"),
 			*CarName,
+			*RoleGroup,
+			*AudioFam,
 			SeatName,
+			Gear,
+			Rpm,
 			IsValid(Car) ? Car->GetSpeedKmh() : 0.0f,
-			IsValid(Car) && Car->IsSirenOn() ? TEXT("ON") : TEXT("off"),
+			SirenName,
 			HullPct,
 			StageName,
-			EngPct,
-			ZF, ZR, ZL, ZRt, ZT,
-			FlatTyres,
-			PropDollars);
+			EngIntrPct,
+			WheelsLost,
+			LoosePanels,
+			DetachedPanels,
+			BrokenLights,
+			MaxDentCm,
+			TwistDeg,
+			TwistMaxDeg);
 
-		const FColor StatusColor = HullPct < 45.0f ? FColor::Red : (HullPct < 80.0f ? FColor::Yellow : FColor::White);
+		const FColor StatusColor = (Dmg && Dmg->IsWrecked()) ? FColor::Red
+			: (HullPct < 55.0f ? FColor::Orange : (HullPct < 85.0f ? FColor::Yellow : FColor::White));
 		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 0.0f, StatusColor, Status);
+
+		const FString KeyHints = TEXT("[V/B] car  [N] cat  [Enter] showroom  [H] siren  [J] mode  [K] airhorn  [C] cam  [F] seat  [R] reset");
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()) + 7300, 0.0f, FColor(180, 215, 255), KeyHints);
+
+		if (IsValid(Car))
+		{
+			if (const AWSPC2TestTrackDirector* TrackDirector = AWSPC2TestTrackDirector::Get(GetWorld()))
+			{
+				FName NearId = NAME_None;
+				FString NearName;
+				if (TrackDirector->FindNearestShowroomPreset(Car->GetActorLocation(), 1000.0f, NearId, NearName))
+				{
+					const FString Prompt = FString::Printf(TEXT("[Enter] Dirigir: %s (%s)"), *NearName, *NearId.ToString());
+					GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()) + 7310, 0.0f, FColor::Green, Prompt, true, FVector2D(1.3f, 1.3f));
+				}
+			}
+		}
 
 		// the mission under way
 		DirectorLookupAge += Delta;
@@ -1829,4 +2138,450 @@ bool AWSPC2PlayerController::ShouldUseTouchControls() const
 {
 	// are we on a mobile platform? Should we force touch?
 	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
+}
+
+void AWSPC2PlayerController::TickTestTrackAudit(float Delta)
+{
+	TestTrackAuditClock += Delta;
+
+	AWSPC2TestTrackDirector* Director = AWSPC2TestTrackDirector::Get(GetWorld());
+	AWSPC2SportsCar* SportsCar = Cast<AWSPC2SportsCar>(GetCurrentVehicle());
+	if (!Director || !SportsCar)
+	{
+		if (TestTrackAuditClock > 25.0f)
+		{
+			UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit: missing Director=%s or PlayerSportsCar=%s"),
+				Director ? TEXT("ok") : TEXT("NULL"), SportsCar ? TEXT("ok") : TEXT("NULL"));
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit: COMPLETE (PASS=false, Showroom=0, Traffic=0/0, Arena=0, RealAudio=false)"));
+			ConsoleCommand(TEXT("quit"));
+		}
+		return;
+	}
+
+	SportsCar->DisableInput(this);
+
+	auto TeleportCar = [](AWSPC2SportsCar* CarToMove, const FVector& WorldLoc, const FRotator& WorldRot)
+	{
+		if (!CarToMove)
+		{
+			return;
+		}
+		CarToMove->SetActorTransform(FTransform(WorldRot, WorldLoc), false, nullptr, ETeleportType::TeleportPhysics);
+		if (UPrimitiveComponent* RootMesh = CarToMove->GetMesh())
+		{
+			RootMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			RootMesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+			RootMesh->WakeAllRigidBodies();
+		}
+		CarToMove->DoThrottle(0.0f);
+		CarToMove->DoSteering(0.0f);
+		CarToMove->DoBrake(0.0f);
+	};
+
+	auto AimTestCam = [this](const FVector& Eye, const FVector& LookAt)
+	{
+		if (!IsValid(TestCamera))
+		{
+			TestCamera = GetWorld()->SpawnActor<ACameraActor>();
+		}
+		if (TestCamera)
+		{
+			TestCamera->SetActorLocationAndRotation(Eye, (LookAt - Eye).Rotation());
+			SetViewTarget(TestCamera);
+		}
+	};
+
+	// Phase 0: Wait for staggered spawning + initial traffic acceleration warmup
+	if (TestTrackAuditPhase == 0)
+	{
+		if ((!Director->IsSpawningFinished() || TestTrackAuditClock < 4.0f) && TestTrackAuditClock < 35.0f)
+		{
+			return;
+		}
+		const int32 Showroom = Director->GetShowroomCount();
+		const int32 ExpectedTraffic = Director->GetExpectedTrafficCount();
+		const int32 LiveTraffic = Director->GetLiveTrafficCount();
+		const int32 Arena = Director->GetArenaTargetCount();
+		if (Showroom < 50 || LiveTraffic < 33 || Arena < 4)
+		{
+			bTestTrackAuditPass = false;
+			UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase0 FAIL: Showroom=%d (want>=50), LiveTraffic=%d (expected %d, want>=33), Arena=%d (want>=4)"),
+				Showroom, LiveTraffic, ExpectedTraffic, Arena);
+		}
+		else
+		{
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase0 OK: Showroom=%d, LiveTraffic=%d/%d, Arena=%d"),
+				Showroom, LiveTraffic, ExpectedTraffic, Arena);
+		}
+		TestTrackAuditPhase = 1;
+		TestTrackAuditSubStep = 0;
+		TestTrackAuditClock = 0.0f;
+		return;
+	}
+
+	// Phase 1: Verify live Chaos traffic accelerates cleanly around the circuit
+	if (TestTrackAuditPhase == 1)
+	{
+		if (TestTrackAuditClock < 6.0f)
+		{
+			return;
+		}
+		const int32 LiveTraffic = Director->GetLiveTrafficCount();
+		const int32 MovingTraffic = Director->GetMovingTrafficCount(8.0f);
+		if (MovingTraffic < 25)
+		{
+			bTestTrackAuditPass = false;
+			UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase1 FAIL: MovingTraffic=%d/%d (want>=25 >= 8 km/h)"), MovingTraffic, LiveTraffic);
+		}
+		else
+		{
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase1 OK: MovingTraffic=%d/%d"), MovingTraffic, LiveTraffic);
+		}
+		TestTrackAuditPhase = 2;
+		TestTrackAuditAudioStep = 0;
+		TestTrackAuditSubStep = 0;
+		TestTrackAuditClock = 1.0f;
+		return;
+	}
+
+	// Phase 2: Hot-switch across real CitySample audio families, check siren/airhorn, capture Showroom screenshot
+	if (TestTrackAuditPhase == 2)
+	{
+		struct FAuditFamilyCase
+		{
+			const TCHAR* PresetId;
+			const TCHAR* ExpectedBankArchetype;
+			const TCHAR* ExpectedStemFamily;
+		};
+		static const FAuditFamilyCase Cases[] = {
+			{ TEXT("Patrol"),                       TEXT("arch_v8_efi_90s"),       TEXT("Sedan_Real") },
+			{ TEXT("Police_Thunderbolt96_Retro"),   TEXT("arch_boxer4_uel_turbo"), TEXT("Hatchback_Real") },
+			{ TEXT("Zhab_Gallo99_Police"),          TEXT("arch_i6_twinturbo"),     TEXT("Sports_Real") },
+			{ TEXT("Zhab_SabaV12_95_Police"),       TEXT("arch_v12_exotic"),       TEXT("Sports_Real") },
+			{ TEXT("Zhab_MD84_Armored"),            TEXT("arch_diesel_heavy"),     TEXT("Semi_Diesel_Real") },
+			{ TEXT("Military_AbramsM1"),            TEXT("Heavy_Armored_Real"),    TEXT("Heavy_Armored_Real") },
+			{ TEXT("Zhab_Club90"),                  TEXT("Electric_Quiet"),        TEXT("Electric_Quiet") },
+		};
+		constexpr int32 NumCases = UE_ARRAY_COUNT(Cases);
+
+		if (TestTrackAuditSubStep == 0)
+		{
+			if (TestTrackAuditClock < 0.7f)
+			{
+				return;
+			}
+			if (TestTrackAuditAudioStep < NumCases)
+			{
+				const FAuditFamilyCase& Case = Cases[TestTrackAuditAudioStep++];
+				const bool bSet = SportsCar->SetVehiclePreset(FName(Case.PresetId));
+				const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+				const FString ActualFamily = Audio ? Audio->GetActiveEngineFamilyName() : TEXT("NULL");
+				const bool bRealAudio = Audio && Audio->IsUsingRealRecordedAudio();
+				const bool bFamilyMatch = (ActualFamily == Case.ExpectedBankArchetype) || (ActualFamily == Case.ExpectedStemFamily);
+				if (!bSet || !bFamilyMatch || !bRealAudio)
+				{
+					bTestTrackAuditPass = false;
+					UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase2 FAIL [%s]: Set=%s, Family=%s (want %s or %s), RealAudio=%s"),
+						Case.PresetId, bSet ? TEXT("true") : TEXT("false"), *ActualFamily, Case.ExpectedBankArchetype, Case.ExpectedStemFamily, bRealAudio ? TEXT("true") : TEXT("false"));
+				}
+				else
+				{
+					UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase2 OK [%s]: Family=%s, RealAudio=%s"),
+						Case.PresetId, *ActualFamily, bRealAudio ? TEXT("true") : TEXT("false"));
+				}
+				TestTrackAuditClock = 0.0f;
+				return;
+			}
+
+			for (int32 i = 0; i < 4; ++i)
+			{
+				SportsCar->CycleSirenMode();
+				UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase2 Siren step %d: Mode=%s"), i, SportsCar->GetSirenModeName());
+			}
+			SportsCar->TriggerAirhorn();
+
+			// Stage Murphy '97 SP near Showroom row 0 bays to visually confirm materials & colors
+			SportsCar->SetVehiclePreset(FName(TEXT("Zhab_Murphy97_SP")));
+			TeleportCar(SportsCar, FVector(12000.0f, 2250.0f, 235.0f), FRotator(0.0f, 35.0f, 0.0f));
+			AimTestCam(FVector(10300.0f, 2100.0f, 430.0f), FVector(14200.0f, 3550.0f, 240.0f));
+			TestTrackAuditSubStep = 1;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 1 && TestTrackAuditClock >= 0.8f)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("Audit_Showroom.png"), false, false);
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase2: requested Audit_Showroom.png"));
+			TestTrackAuditSubStep = 2;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 2 && TestTrackAuditClock >= 0.7f)
+		{
+			TestTrackAuditPhase = 3;
+			TestTrackAuditSubStep = 0;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		return;
+	}
+
+	// Phase 3: Real High-Speed Arena Wall Crash (Zhab_Murphy97_SP vs Concrete Barrier #1 at X=22000, Y=-2800)
+	if (TestTrackAuditPhase == 3)
+	{
+		UWSPC2VehicleDamageComponent* Dmg = SportsCar->GetVehicleDamage();
+		if (TestTrackAuditSubStep == 0)
+		{
+			SportsCar->SetVehiclePreset(FName(TEXT("Zhab_Murphy97_SP")));
+			if (Dmg)
+			{
+				Dmg->RepairAll();
+			}
+			TeleportCar(SportsCar, FVector(11200.0f, -2800.0f, 235.0f), FRotator(0.0f, 0.0f, 0.0f));
+			AimTestCam(FVector(12100.0f, -3350.0f, 390.0f), FVector(11400.0f, -2800.0f, 240.0f));
+			TestTrackAuditSubStep = 1;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 1 && TestTrackAuditClock >= 0.8f)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("Audit_Wreckfest_Before.png"), false, false);
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase3: requested Audit_Wreckfest_Before.png at X=%.1f"), SportsCar->GetActorLocation().X);
+			SetViewTarget(SportsCar);
+			TestTrackAuditSubStep = 2;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 2)
+		{
+			SportsCar->DoSteering(0.0f);
+			SportsCar->DoBrake(0.0f);
+			SportsCar->DoThrottle(TestTrackAuditClock >= 0.30f ? 1.0f : 0.0f);
+
+			const bool bHit = Dmg && Dmg->GetCollisionCount() > 0;
+			if ((bHit && TestTrackAuditClock >= 2.2f && SportsCar->GetSpeedKmh() < 30.0f)
+				|| (bHit && TestTrackAuditClock >= 6.2f)
+				|| TestTrackAuditClock >= 7.8f)
+			{
+				SportsCar->DoThrottle(0.0f);
+				TestTrackAuditSubStep = 3;
+				TestTrackAuditClock = 0.0f;
+			}
+			return;
+		}
+		if (TestTrackAuditSubStep == 3 && TestTrackAuditClock >= 0.7f)
+		{
+			const float FinalX = SportsCar->GetActorLocation().X;
+			const int32 Hits = Dmg ? Dmg->GetCollisionCount() : 0;
+			const float HullPct = Dmg ? Dmg->GetHealthPercent() : 100.0f;
+			const float EngIntr = Dmg ? Dmg->GetEngineBlockIntrusionPct() : 0.0f;
+			const bool bDeformActive = Dmg && Dmg->IsDeformableMeshActive();
+			const float MaxVertDisp = Dmg ? Dmg->GetMaxVertexDisplacementCm() : 0.0f;
+			const int32 LooseP = Dmg ? Dmg->GetLoosePanelCount() : 0;
+			const int32 DetP = Dmg ? Dmg->GetDetachedPanelCount() : 0;
+			const int32 BrokenL = Dmg ? Dmg->GetBrokenLightCount() : 0;
+
+			const bool bBlockedByWall = FinalX < 22150.0f;
+			const bool bDamaged = Hits > 0 && HullPct < 95.0f && EngIntr > 0.0f;
+			const bool bWreckfestOK = bDeformActive && MaxVertDisp >= 15.0f && (LooseP + DetP) >= 1 && BrokenL >= 1;
+			if (!bBlockedByWall || !bDamaged || !bWreckfestOK)
+			{
+				bTestTrackAuditPass = false;
+				UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase3 FAIL WallCrash: FinalX=%.1f, Hits=%d, Hull=%.1f%%, EngIntr=%.1f%%, Deform=%d, MaxDisp=%.1fcm, Panels=%d/%d, BrokenLights=%d"),
+					FinalX, Hits, HullPct, EngIntr, bDeformActive ? 1 : 0, MaxVertDisp, LooseP, DetP, BrokenL);
+			}
+			else
+			{
+				UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase3 OK WallCrash: FinalX=%.1f, Hits=%d, Hull=%.1f%%, EngIntr=%.1f%%, Deform=%d, MaxDisp=%.1fcm, Panels=%d/%d, BrokenLights=%d"),
+					FinalX, Hits, HullPct, EngIntr, bDeformActive ? 1 : 0, MaxVertDisp, LooseP, DetP, BrokenL);
+			}
+
+			const FTransform CarTf = SportsCar->GetActorTransform();
+			AimTestCam(
+				CarTf.TransformPosition(FVector(380.0f, -240.0f, 145.0f)),
+				CarTf.TransformPosition(FVector(120.0f, 0.0f, 52.0f)));
+			TestTrackAuditSubStep = 4;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 4 && TestTrackAuditClock >= 0.4f)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("Audit_Wreckfest_WallFront.png"), false, false);
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase3: requested Audit_Wreckfest_WallFront.png"));
+			TestTrackAuditSubStep = 5;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 5 && TestTrackAuditClock >= 0.7f)
+		{
+			const FTransform CarTf = SportsCar->GetActorTransform();
+			AimTestCam(
+				CarTf.TransformPosition(FVector(580.0f, 420.0f, 320.0f)),
+				CarTf.TransformPosition(FVector(100.0f, 0.0f, 45.0f)));
+			TestTrackAuditSubStep = 6;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 6 && TestTrackAuditClock >= 0.4f)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("Audit_Wreckfest_WallOverview.png"), false, false);
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase3: requested Audit_Wreckfest_WallOverview.png"));
+			TestTrackAuditSubStep = 7;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 7 && TestTrackAuditClock >= 0.7f)
+		{
+			TestTrackAuditPhase = 4;
+			TestTrackAuditSubStep = 0;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		return;
+	}
+
+	// Phase 4: Real Car-to-Car Chaos Collision (Patrol vs Arena Target #1) + RepairAll reset check
+	if (TestTrackAuditPhase == 4)
+	{
+		if (TestTrackAuditSubStep == 0)
+		{
+			SportsCar->SetVehiclePreset(FName(TEXT("Patrol")));
+			if (UWSPC2VehicleDamageComponent* Dmg = SportsCar->GetVehicleDamage())
+			{
+				Dmg->RepairAll();
+			}
+			SetViewTarget(SportsCar);
+
+			AWSPC2SportsCar* ArenaTarget = Director->GetFirstArenaTargetCar();
+			if (!ArenaTarget || !ArenaTarget->GetVehicleDamage())
+			{
+				bTestTrackAuditPass = false;
+				UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase4 FAIL: missing ArenaTarget #1"));
+				TestTrackAuditPhase = 5;
+				TestTrackAuditClock = 0.0f;
+				return;
+			}
+			TestTrackAuditTargetCar = ArenaTarget;
+			TestTrackAuditTargetStartPos = ArenaTarget->GetActorLocation();
+			TeleportCar(SportsCar, TestTrackAuditTargetStartPos + FVector(-5500.0f, 0.0f, 20.0f), FRotator(0.0f, 0.0f, 0.0f));
+			TestTrackAuditSubStep = 1;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 1 && TestTrackAuditClock >= 0.8f)
+		{
+			TestTrackAuditSubStep = 2;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 2)
+		{
+			AWSPC2SportsCar* ArenaTarget = Cast<AWSPC2SportsCar>(TestTrackAuditTargetCar.Get());
+			float SteerCmd = 0.0f;
+			if (ArenaTarget)
+			{
+				const FVector LocalTarget = SportsCar->GetActorTransform().InverseTransformPosition(ArenaTarget->GetActorLocation());
+				const float TargetYawDeg = FMath::RadiansToDegrees(FMath::Atan2(LocalTarget.Y, FMath::Max(LocalTarget.X, 100.0f)));
+				SteerCmd = FMath::Clamp(TargetYawDeg / 25.0f, -1.0f, 1.0f);
+			}
+			SportsCar->DoSteering(SteerCmd);
+			SportsCar->DoBrake(0.0f);
+			SportsCar->DoThrottle(1.0f);
+
+			UWSPC2VehicleDamageComponent* PlayerDmg = SportsCar->GetVehicleDamage();
+			UWSPC2VehicleDamageComponent* TargetDmg = ArenaTarget ? ArenaTarget->GetVehicleDamage() : nullptr;
+			const bool bBothHit = PlayerDmg && TargetDmg && PlayerDmg->GetCollisionCount() > 0 && TargetDmg->GetCollisionCount() > 0;
+			if ((bBothHit && TestTrackAuditClock >= 1.4f) || TestTrackAuditClock >= 5.2f)
+			{
+				SportsCar->DoThrottle(0.0f);
+				SportsCar->DoSteering(0.0f);
+				TestTrackAuditSubStep = 3;
+				TestTrackAuditClock = 0.0f;
+			}
+			return;
+		}
+		if (TestTrackAuditSubStep == 3 && TestTrackAuditClock >= 0.7f)
+		{
+			AWSPC2SportsCar* ArenaTarget = Cast<AWSPC2SportsCar>(TestTrackAuditTargetCar.Get());
+			UWSPC2VehicleDamageComponent* PlayerDmg = SportsCar->GetVehicleDamage();
+			UWSPC2VehicleDamageComponent* TargetDmg = ArenaTarget ? ArenaTarget->GetVehicleDamage() : nullptr;
+			const int32 PlayerHits = PlayerDmg ? PlayerDmg->GetCollisionCount() : 0;
+			const int32 TargetHits = TargetDmg ? TargetDmg->GetCollisionCount() : 0;
+			const float MovedCm = ArenaTarget ? FVector::Dist2D(ArenaTarget->GetActorLocation(), TestTrackAuditTargetStartPos) : 0.0f;
+			const bool bPatrolDeform = PlayerDmg && PlayerDmg->IsDeformableMeshActive();
+			const float PatrolDisp = PlayerDmg ? PlayerDmg->GetMaxVertexDisplacementCm() : 0.0f;
+			const int32 TargetLoose = TargetDmg ? TargetDmg->GetLoosePanelCount() : 0;
+			const int32 TargetDet = TargetDmg ? TargetDmg->GetDetachedPanelCount() : 0;
+
+			if (PlayerHits == 0 || TargetHits == 0 || MovedCm < 80.0f || !bPatrolDeform || PatrolDisp < 8.0f)
+			{
+				bTestTrackAuditPass = false;
+				UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase4 FAIL CarToCar: PlayerHits=%d, TargetHits=%d, Moved=%.1f cm, PatrolDeform=%d, PatrolDisp=%.1f cm, TargetPanels=%d/%d"),
+					PlayerHits, TargetHits, MovedCm, bPatrolDeform ? 1 : 0, PatrolDisp, TargetLoose, TargetDet);
+			}
+			else
+			{
+				UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase4 OK CarToCar: PlayerHits=%d, TargetHits=%d, Moved=%.1f cm, PatrolDeform=%d, PatrolDisp=%.1f cm, TargetPanels=%d/%d"),
+					PlayerHits, TargetHits, MovedCm, bPatrolDeform ? 1 : 0, PatrolDisp, TargetLoose, TargetDet);
+			}
+
+			const FVector PPos = SportsCar->GetActorLocation();
+			const FVector Fwd = SportsCar->GetActorForwardVector();
+			const FVector Right = SportsCar->GetActorRightVector();
+			AimTestCam(
+				PPos + Fwd * 440.0f - Right * 290.0f + FVector(0.0f, 0.0f, 135.0f),
+				PPos + Fwd * 95.0f + FVector(0.0f, 0.0f, 55.0f));
+			TestTrackAuditSubStep = 4;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 4 && TestTrackAuditClock >= 0.4f)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("Audit_Wreckfest_PatrolCrash.png"), false, false);
+			UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit Phase4: requested Audit_Wreckfest_PatrolCrash.png"));
+			TestTrackAuditSubStep = 5;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		if (TestTrackAuditSubStep == 5 && TestTrackAuditClock >= 0.7f)
+		{
+			if (UWSPC2VehicleDamageComponent* PlayerDmg = SportsCar->GetVehicleDamage())
+			{
+				PlayerDmg->RepairAll();
+				if (PlayerDmg->GetHealthPercent() < 99.5f || PlayerDmg->IsEngineStalled() || PlayerDmg->IsDeformableMeshActive())
+				{
+					bTestTrackAuditPass = false;
+					UE_LOG(LogWSPC2, Error, TEXT("TestTrackAudit Phase4 FAIL: RepairAll left Hull=%.1f%%, stalled=%s, deformActive=%s"),
+						PlayerDmg->GetHealthPercent(), PlayerDmg->IsEngineStalled() ? TEXT("true") : TEXT("false"),
+						PlayerDmg->IsDeformableMeshActive() ? TEXT("true") : TEXT("false"));
+				}
+			}
+
+			TestTrackAuditPhase = 5;
+			TestTrackAuditSubStep = 0;
+			TestTrackAuditClock = 0.0f;
+			return;
+		}
+		return;
+	}
+
+	// Phase 5: Finalize audit after giving screenshots time to flush
+	if (TestTrackAuditPhase == 5)
+	{
+		if (TestTrackAuditClock < 1.0f)
+		{
+			return;
+		}
+		const UWSPC2VehicleAudioComponent* Audio = SportsCar->GetVehicleAudio();
+		UE_LOG(LogWSPC2, Log, TEXT("TestTrackAudit: COMPLETE (PASS=%s, Showroom=%d, Traffic=%d/%d, Arena=%d, RealAudio=%s)"),
+			bTestTrackAuditPass ? TEXT("true") : TEXT("false"),
+			Director->GetShowroomCount(),
+			Director->GetLiveTrafficCount(),
+			Director->GetMovingTrafficCount(8.0f),
+			Director->GetArenaTargetCount(),
+			(Audio && Audio->IsUsingRealRecordedAudio()) ? TEXT("true") : TEXT("false"));
+
+		ConsoleCommand(TEXT("quit"));
+		bTestTrackAudit = false;
+	}
 }

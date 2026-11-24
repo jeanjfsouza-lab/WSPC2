@@ -76,3 +76,13 @@ UWSPC2PatrolWheelRear::UWSPC2PatrolWheelRear()
 	MaxBrakeTorque = 1900.0f;
 	MaxHandBrakeTorque = 4500.0f;
 }
+
+UWSPC2PatrolWheelFrontDriven::UWSPC2PatrolWheelFrontDriven()
+{
+	bAffectedByEngine = true;
+}
+
+UWSPC2PatrolWheelRearFree::UWSPC2PatrolWheelRearFree()
+{
+	bAffectedByEngine = false;
+}

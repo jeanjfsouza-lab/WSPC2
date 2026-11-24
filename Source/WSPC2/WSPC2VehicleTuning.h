@@ -379,4 +379,36 @@ public:
 	/** Maximum steering alignment pull added at full left/right asymmetry plus flat front tyre */
 	UPROPERTY(Config, EditAnywhere, Category = "Damage")
 	float DamageMaxSteeringPull = 0.24f;
+
+	/** Percentage [0..100] of estimated engine block intrusion above which the engine is permanently disabled. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	float DamageEngineIntrusionDisablePct = 30.0f;
+
+	/** Single-corner severity [0..1+] above which wheel alignment/camber/toe bends noticeably. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	float DamageWheelBendSeverity = 0.35f;
+
+	/** Single-corner severity [0..1+] above which a wheel detaches cleanly from the hub (or when punctured + WheelHealth <= 0.14). */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	float DamageWheelDetachSeverity = 0.80f;
+
+	/** Number of detached/lost wheels that completely disables/immobilizes the vehicle. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	int32 DamageDetachedWheelsToDisable = 2;
+
+	/** Effective Chaos hub radius (cm) once a wheel detaches completely and the corner drops onto the asphalt. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage", meta = (Units = "cm"))
+	float DamageDetachedHubRadiusCm = 11.0f;
+
+	/** Structural chassis torsion degrees gained per unit severity of heavy oblique/side/roof impact. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage", meta = (Units = "deg"))
+	float DamageChassisTwistPerSeverityDeg = 4.2f;
+
+	/** Optional override (> 0.5) for critical chassis torsion X degrees at which floorpan touches ground; <= 0 calculates geometrically per vehicle. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage", meta = (Units = "deg"))
+	float DamageFloorTouchTwistOverrideDeg = 0.0f;
+
+	/** Maximum localized WPO vertex dent depth (cm) pushed into M_WSPC2_VehicleDamage. */
+	UPROPERTY(Config, EditAnywhere, Category = "Damage", meta = (Units = "cm"))
+	float DamageMaxDeformDepthCm = 26.0f;
 };

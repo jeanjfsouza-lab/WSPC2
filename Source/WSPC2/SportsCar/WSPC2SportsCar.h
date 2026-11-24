@@ -81,6 +81,9 @@ class AWSPC2SportsCar : public AWSPC2Pawn
 	/** True once the player or CLI explicitly selected a built-in preset, overriding VehicleProfileAsset */
 	bool bPresetOverrideActive = false;
 
+	/** Set to false on AI traffic/arena cars so -WSPC2Vehicle=<Id> only picks the player's car */
+	bool bAllowCliVehicleOverride = true;
+
 	/** Active wheel authoring convention for Tick wheel transforms */
 	EWSPC2WheelLayoutMode ActiveWheelLayoutMode = EWSPC2WheelLayoutMode::BakedCarSpace;
 
@@ -93,9 +96,11 @@ class AWSPC2SportsCar : public AWSPC2Pawn
 
 	/** Active display name and handling class scales */
 	FString ActiveVehicleDisplayName = TEXT("Patrol Cruiser");
+	FWSPC2VehicleProfileSpec ActiveProfileSpec;
 	float ActiveMassScale = 1.0f;
 	float ActiveMaxTorqueScale = 1.0f;
 	float ActiveChassisHeightCm = 144.0f;
+	float ActiveMaxSteerAngle = 36.0f;
 
 	/** Wheel spin as drawn (see Tick) */
 	float DrawnWheelAngle[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -121,6 +126,22 @@ public:
 	virtual void Tick(float Delta) override;
 
 	virtual FString GetActiveVehicleDisplayName() const override { return ActiveVehicleDisplayName; }
+	virtual FName GetActivePresetId() const override { return ActiveVehiclePresetId; }
+	virtual FString GetActiveRoleGroup() const override { return UWSPC2VehicleProfile::GetNormalizedRoleGroup(ActiveProfileSpec); }
+	virtual FString GetActiveAudioProfile() const override { return ActiveProfileSpec.AudioProfile; }
+	virtual float GetActiveIdleRPM() const override { return ActiveProfileSpec.bUseRealWorldSpecs ? ActiveProfileSpec.IdleRPM : 720.0f; }
+	virtual float GetActiveMaxRPM() const override { return ActiveProfileSpec.bUseRealWorldSpecs ? ActiveProfileSpec.MaxRPM : 5750.0f; }
+	virtual EWSPC2Drivetrain GetActiveDrivetrain() const override { return ActiveProfileSpec.bUseRealWorldSpecs ? ActiveProfileSpec.Drivetrain : EWSPC2Drivetrain::RWD; }
+	virtual float GetActiveBaseRearFriction() const override;
+
+	const FWSPC2VehicleProfileSpec& GetActiveProfileSpec() const { return ActiveProfileSpec; }
+	void SetAllowCliVehicleOverride(bool bAllow) { bAllowCliVehicleOverride = bAllow; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle")
+	float GetDrawnSteeringWheelDeg() const { return DrawnSteering * SteeringWheelMaxDeg; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle")
+	bool HasSteeringWheelMesh() const { return SteeringWheel && SteeringWheel->IsVisible(); }
 
 	UFUNCTION(BlueprintPure, Category = "Vehicle")
 	FName GetActiveVehiclePresetId() const { return ActiveVehiclePresetId; }
@@ -132,6 +153,14 @@ public:
 	/** Server-authoritative cycle to the next available built-in hero preset. */
 	UFUNCTION(BlueprintCallable, Category = "Vehicle")
 	FName CycleVehiclePreset();
+
+	/** Server-authoritative cycle forward (+1) or backward (-1) across all loadable presets. */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle")
+	FName CycleVehiclePresetDirection(int32 Direction);
+
+	/** Server-authoritative jump to the first loadable vehicle of the next category (Builtin/Fleet_Playable/Fleet_Bonus/Military/Mission/Traffic). */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle")
+	FName CycleVehicleCategory();
 
 	/** Crew slots: who sits where */
 	static constexpr int32 CrewDriver = 0;
@@ -176,6 +205,9 @@ protected:
 
 	/** Stops the template sports car's own physics shapes from touching the world; the sedan boxes remain */
 	void DisableTemplateBodyCollision();
+
+	/** Unwelds, resizes/rebuilds physics state, and re-welds BodyCollision/CabinCollision onto Root. */
+	void ReweldProfileCollision();
 
 	/** Where wheel number Index sits at rest, relative to the car */
 	FVector GetSedanWheelPosition(int32 Index) const;

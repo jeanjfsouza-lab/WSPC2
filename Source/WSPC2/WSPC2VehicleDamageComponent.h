@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "WSPC2DeformableMesh.h"
 #include "WSPC2VehicleDamageComponent.generated.h"
 
 class UPrimitiveComponent;
@@ -11,9 +12,41 @@ class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UPointLightComponent;
+class USpotLightComponent;
+class UDecalComponent;
 class UParticleSystemComponent;
 class UParticleSystem;
 class UStaticMesh;
+class AStaticMeshActor;
+struct FWSPC2VehicleProfileSpec;
+
+UENUM(BlueprintType)
+enum class EWSPC2VehicleDisableReason : uint8
+{
+	None = 0,
+	HealthDepleted = 1,
+	EngineBlockCrushed = 2,
+	TwoWheelsLost = 3,
+	ChassisTwisted = 4
+};
+
+USTRUCT()
+struct FWSPC2ImpactDeformSlot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FVector_NetQuantize LocalPos = FVector::ZeroVector;
+
+	UPROPERTY()
+	FVector_NetQuantizeNormal InwardDir = FVector(-1.0f, 0.0f, 0.0f);
+
+	UPROPERTY()
+	float RadiusCm = 0.0f;
+
+	UPROPERTY()
+	float DepthCm = 0.0f;
+};
 
 UENUM(BlueprintType)
 enum class EWSPC2DamageZone : uint8
@@ -76,6 +109,7 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	/** Registers chassis collision & visual meshes so Chaos impacts drive deformation, glass fracture, VFX, and wheel/engine damage. */
@@ -94,6 +128,12 @@ public:
 	/** Scales baseline engine torque to match the active hero vehicle profile (1.0 = default patrol car). */
 	void SetBaselineTorqueScale(float InScale) { BaselineTorqueScale = FMath::Clamp(InScale, 0.25f, 4.0f); }
 
+	/** Configures profile-specific geometry for 30% engine block intrusion, armor multiplier, and floor-touch torsion angle. */
+	void ConfigureFromVehicleProfile(const FWSPC2VehicleProfileSpec& Spec, const FVector InWheelHubPositions[4], const float InWheelRadii[4]);
+
+	/** Registers a non-Chaos wheel mesh (used when spawning detached rolling wheels). */
+	void SetDetachedWheelVisualMeshOverride(int32 WheelIndex, UStaticMesh* Mesh);
+
 	/** Applies a collision impact authoritatively (server/standalone only; no-op on simulated clients). */
 	UFUNCTION(BlueprintCallable, Category = "Vehicle|Damage")
 	void ApplyDirectImpact(const FVector& WorldImpactPoint, const FVector& WorldImpactNormal, float ImpactSpeedKmh, float ImpulseMagnitude);
@@ -101,6 +141,10 @@ public:
 	/** Punctures/buckles a specific wheel (0=FL, 1=FR, 2=RL, 3=RR) authoritatively. */
 	UFUNCTION(BlueprintCallable, Category = "Vehicle|Damage")
 	void PunctureWheel(int32 WheelIndex);
+
+	/** Detaches/rips a wheel off the hub authoritatively and spawns a physical rolling wheel actor. */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle|Damage")
+	void DetachWheel(int32 WheelIndex, const FVector& ImpulseDir = FVector::ZeroVector, float SpeedKmh = 45.0f);
 
 	/** Restores vehicle body, glass, lights, VFX, tyres, suspension, brakes, and engine to 100% pristine condition. */
 	UFUNCTION(BlueprintCallable, Category = "Vehicle|Damage")
@@ -129,7 +173,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
 	int32 GetPuncturedWheelCount() const;
 
-	/** Friction scale the damage puts on a wheel (flat tyre, bent rim); 1 when intact */
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	int32 GetDetachedWheelCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	bool IsWheelDetached(int32 WheelIndex) const
+	{
+		return (WheelIndex >= 0 && WheelIndex < 4) ? ((DetachedWheelMask & static_cast<uint8>(1u << WheelIndex)) != 0) : false;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	float GetWheelBentAmount(int32 WheelIndex) const
+	{
+		return (WheelIndex >= 0 && WheelIndex < 4) ? WheelBentAmount[WheelIndex] : 0.0f;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	float GetEngineBlockIntrusionPct() const { return EngineBlockIntrusionPct; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	FVector GetChassisTwistDeg() const { return ChassisTwistDeg; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	float GetMaxChassisTwistDeg() const
+	{
+		return FMath::Max3(FMath::Abs(ChassisTwistDeg.X), FMath::Abs(ChassisTwistDeg.Y), FMath::Abs(ChassisTwistDeg.Z));
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	float GetFloorTouchTwistDeg() const { return FloorTouchTwistDeg; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	EWSPC2VehicleDisableReason GetDisableReason() const { return DisableReason; }
+
+	const TCHAR* GetDisableReasonName() const;
+
+	/** Friction scale the damage puts on a wheel (flat tyre, bent rim, or bare detached hub); 1 when intact */
 	float GetWheelFrictionScale(int32 WheelIndex) const { return WheelIndex >= 0 && WheelIndex < 4 ? WheelFrictionScale[WheelIndex] : 1.0f; }
 
 	bool IsWheelPunctured(int32 WheelIndex) const
@@ -145,6 +224,16 @@ public:
 	float GetWheelCamberDamageDeg(int32 WheelIndex) const
 	{
 		return (WheelIndex >= 0 && WheelIndex < 4) ? WheelCamberTiltDeg[WheelIndex] : 0.0f;
+	}
+
+	float GetWheelToeDamageDeg(int32 WheelIndex) const
+	{
+		return (WheelIndex >= 0 && WheelIndex < 4) ? WheelToeTiltDeg[WheelIndex] : 0.0f;
+	}
+
+	float GetWheelWobbleAmplitudeDeg(int32 WheelIndex) const
+	{
+		return (WheelIndex >= 0 && WheelIndex < 4) ? WheelBentAmount[WheelIndex] * 8.5f : 0.0f;
 	}
 
 	float GetWheelVisualDropCm(int32 WheelIndex) const;
@@ -181,6 +270,27 @@ public:
 	bool IsHoodSmokeActive() const;
 	bool IsRimSparkActive() const;
 
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	bool IsDeformableMeshActive() const { return DeformableChassis && DeformableChassis->IsActive(); }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	float GetMaxVertexDisplacementCm() const { return DeformableChassis ? DeformableChassis->GetMaxVertexDisplacementCm() : 0.0f; }
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	int32 GetLoosePanelCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	int32 GetDetachedPanelCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	int32 GetBrokenLightCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	int32 GetShatteredGlassCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Vehicle|Damage")
+	bool IsCornerLightIntact(int32 LightIndex) const { return (LightIndex >= 0 && LightIndex < 5) ? ((BrokenLightsMask & static_cast<uint8>(1u << LightIndex)) == 0) : true; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Vehicle|Damage")
 	FWSPC2OnVehicleDamaged OnVehicleDamaged;
 
@@ -189,11 +299,22 @@ protected:
 	void HandleActorHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit);
 
 	UFUNCTION()
+	void HandleComponentHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+	UFUNCTION()
 	void OnRep_DamageState();
 
 	UFUNCTION()
 	void OnRep_LastImpact();
 
+	UFUNCTION()
+	void OnRep_MeshDeformState();
+
+	void EnsureDeformableChassis();
+	void EvaluatePanelsAndLightsFromImpact(const FVector& LocalHit, const FVector& WorldImpactNormal, float Severity, float ImpactSpeedKmh, EWSPC2DamageZone Zone);
+	void BreakCornerLight(int32 LightIndex, EWSPC2GlassZone GlassZone, const FVector& ImpulseDir, float ImpactSpeedKmh);
+	void SyncDeformableChassisFromState();
+	void UpdateDynamicCornerLights(float DeltaTime);
 	void RefreshAllDamageSystems();
 	void ApplyVisualDeformation();
 	void UpdateGlassFractureMaterials();
@@ -202,6 +323,13 @@ protected:
 	void ApplyMechanicalPenalties();
 	void TriggerImpactBurstFX(const FVector& WorldPoint, const FVector& WorldNormal, float Severity);
 	void SpawnImpactDebris(const FVector& WorldPoint, const FVector& WorldNormal, float Severity);
+	void SpawnDetachedWheelActor(int32 WheelIndex, const FVector& ImpulseDir, float SpeedKmh);
+	void SpawnLocalizedContactDecal(const FVector& LocalHit, const FVector& InwardDir, float Severity);
+	void ClearContactDamageDecals();
+	void EvaluateEngineBlockIntrusion(const FVector& LocalHit, const FVector& InwardDir, float Severity, float ArmorScale);
+	void EvaluateChassisTwist(const FVector& LocalHit, const FVector& InwardDir, float Severity, float ArmorScale);
+	void RecordImpactDeformSlot(const FVector& LocalHit, const FVector& InwardDir, float Severity);
+	void TriggerVehicleDisabled(EWSPC2VehicleDisableReason Reason);
 	void RecalculateWheelCamberAndFlags();
 
 private:
@@ -219,6 +347,15 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> BodyMIDs;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> GlassMIDs;
+
+	UPROPERTY()
+	TArray<TObjectPtr<AStaticMeshActor>> SpawnedDetachedWheels;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> WheelVisualOverrides[4];
 
 	UPROPERTY()
 	TArray<TObjectPtr<UMaterialInterface>> OriginalBodyMaterials;
@@ -240,6 +377,11 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> GenericGlassFractured;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> LocalizedDamageDecalMat;
+
+	TArray<TWeakObjectPtr<UDecalComponent>> ContactDamageDecals;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> DebrisCubeMesh;
@@ -271,6 +413,32 @@ private:
 	UPROPERTY()
 	TObjectPtr<UParticleSystemComponent> RimSparkComp;
 
+	TUniquePtr<FWSPC2DeformableChassis> DeformableChassis;
+
+	UPROPERTY()
+	TArray<TObjectPtr<USpotLightComponent>> HeadlightSpots;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UPointLightComponent>> TaillightGlows;
+
+	float LightFlickerTimer[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+	UPROPERTY(ReplicatedUsing = OnRep_MeshDeformState)
+	uint8 PanelStates[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+	UPROPERTY(ReplicatedUsing = OnRep_MeshDeformState)
+	uint8 BrokenLightsMask = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_MeshDeformState)
+	uint8 ShatteredGlassMask = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_MeshDeformState)
+	TArray<FWSPC2MeshImpactRecord> ImpactHistory;
+
+	uint8 AppliedPanelStates[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	uint8 AppliedShatteredGlassMask = 0;
+	int32 AppliedImpactCount = 0;
+
 	FTransform InitialBodyRelativeTransform;
 	FTransform InitialGlassRelativeTransform;
 	bool bRigConfigured = false;
@@ -299,6 +467,24 @@ private:
 	uint8 PuncturedWheelMask = 0;
 
 	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	uint8 DetachedWheelMask = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	float WheelBentAmount[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	float EngineBlockIntrusionPct = 0.0f;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	FVector ChassisTwistDeg = FVector::ZeroVector;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	EWSPC2VehicleDisableReason DisableReason = EWSPC2VehicleDisableReason::None;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
+	FWSPC2ImpactDeformSlot DeformSlots[4];
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
 	float HealthPercent = 100.0f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_DamageState)
@@ -315,6 +501,13 @@ private:
 
 	bool bWheelPunctured[4] = { false, false, false, false };
 	float WheelCamberTiltDeg[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float WheelToeTiltDeg[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	int32 NextDeformSlot = 0;
+	uint8 LastVisualDetachedMask = 0;
+	float ArmorDamageScaleOverride = -1.0f;
+	float GroundClearanceCm = 17.5f;
+	float FloorTouchTwistDeg = 10.5f;
+	FBox EngineBlockBox = FBox(FVector(105.0f, -42.0f, 30.0f), FVector(220.0f, 42.0f, 88.0f));
 	int32 GlassCrackStage = 0;
 	bool bSideGlassFractured = false;
 	bool bLightbarFractured = false;

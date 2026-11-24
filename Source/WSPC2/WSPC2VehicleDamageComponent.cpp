@@ -2,12 +2,17 @@
 
 #include "WSPC2VehicleDamageComponent.h"
 #include "WSPC2.h"
+#include "WSPC2VehicleProfile.h"
 #include "WSPC2VehicleTuning.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "ChaosVehicleWheel.h"
 #include "Components/BoxComponent.h"
+#include "Components/DecalComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "GameFramework/Pawn.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -83,11 +88,21 @@ void UWSPC2VehicleDamageComponent::GetLifetimeReplicatedProps(TArray<FLifetimePr
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, ZoneDamage);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, WheelHealth);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, PuncturedWheelMask);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, DetachedWheelMask);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, WheelBentAmount);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, EngineBlockIntrusionPct);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, ChassisTwistDeg);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, DisableReason);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, DeformSlots);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, HealthPercent);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, bIsWrecked);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, PropertyDamageDollars);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, CollisionCount);
 	DOREPLIFETIME(UWSPC2VehicleDamageComponent, LastImpact);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, PanelStates);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, BrokenLightsMask);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, ShatteredGlassMask);
+	DOREPLIFETIME(UWSPC2VehicleDamageComponent, ImpactHistory);
 }
 
 void UWSPC2VehicleDamageComponent::BeginPlay()
@@ -112,6 +127,10 @@ void UWSPC2VehicleDamageComponent::BeginPlay()
 		if (Prim && Prim->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
 		{
 			Prim->SetNotifyRigidBodyCollision(true);
+			if (Owner->HasAuthority())
+			{
+				Prim->OnComponentHit.AddUniqueDynamic(this, &UWSPC2VehicleDamageComponent::HandleComponentHit);
+			}
 		}
 	}
 
@@ -124,6 +143,7 @@ void UWSPC2VehicleDamageComponent::BeginPlay()
 		WreckSmokeParticleTemplate = LoadOptionalAsset<UParticleSystem>(PathWreckSmokeVFX);
 		SparkParticleTemplate = LoadOptionalAsset<UParticleSystem>(PathSparkVFX);
 		DebrisCubeMesh = LoadOptionalAsset<UStaticMesh>(TEXT("/Engine/BasicShapes/Cube.Cube"));
+		LocalizedDamageDecalMat = LoadOptionalAsset<UMaterialInterface>(TEXT("/Game/Vehicles/Imported/Materials/M_WSPC2_DamageDecal.M_WSPC2_DamageDecal"));
 
 		if (USceneComponent* RootComp = Owner->GetRootComponent())
 		{
@@ -164,8 +184,60 @@ void UWSPC2VehicleDamageComponent::BeginPlay()
 			RimSparkComp = CreateVehicleParticleComp(
 				Owner, RootComp, TEXT("DamageRimSparkVFX"), SparkParticleTemplate,
 				FVector::ZeroVector, FRotator(15.0f, 180.0f, 0.0f), FVector(0.28f));
+
+			HeadlightSpots.Reset();
+			for (int32 i = 0; i < 2; ++i)
+			{
+				const FString Name = (i == 0) ? TEXT("DamageHeadlightSpotL") : TEXT("DamageHeadlightSpotR");
+				USpotLightComponent* Spot = NewObject<USpotLightComponent>(Owner, *Name);
+				if (Spot)
+				{
+					Spot->SetupAttachment(RootComp);
+					Spot->SetRelativeLocation(FVector(230.0f, (i == 0) ? -68.0f : 68.0f, 64.0f));
+					Spot->SetRelativeRotation(FRotator(-5.0f, 0.0f, 0.0f));
+					Spot->SetLightColor(FLinearColor(1.0f, 0.96f, 0.86f));
+					Spot->SetIntensity(28000.0f);
+					Spot->SetAttenuationRadius(3800.0f);
+					Spot->SetInnerConeAngle(16.0f);
+					Spot->SetOuterConeAngle(36.0f);
+					Spot->SetCastShadows(false);
+					Spot->SetVisibility(false);
+					Spot->RegisterComponent();
+				}
+				HeadlightSpots.Add(Spot);
+			}
+
+			TaillightGlows.Reset();
+			for (int32 i = 0; i < 2; ++i)
+			{
+				const FString Name = (i == 0) ? TEXT("DamageTaillightGlowL") : TEXT("DamageTaillightGlowR");
+				UPointLightComponent* Glow = NewObject<UPointLightComponent>(Owner, *Name);
+				if (Glow)
+				{
+					Glow->SetupAttachment(RootComp);
+					Glow->SetRelativeLocation(FVector(-245.0f, (i == 0) ? -68.0f : 68.0f, 70.0f));
+					Glow->SetLightColor(FLinearColor(1.0f, 0.12f, 0.06f));
+					Glow->SetIntensity(6500.0f);
+					Glow->SetAttenuationRadius(420.0f);
+					Glow->SetCastShadows(false);
+					Glow->SetVisibility(false);
+					Glow->RegisterComponent();
+				}
+				TaillightGlows.Add(Glow);
+			}
 		}
 	}
+}
+
+void UWSPC2VehicleDamageComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearContactDamageDecals();
+	if (DeformableChassis)
+	{
+		DeformableChassis->ResetAndDestroy(BodyMesh, GlassMesh);
+		DeformableChassis.Reset();
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void UWSPC2VehicleDamageComponent::CaptureBaselineTuning()
@@ -173,6 +245,26 @@ void UWSPC2VehicleDamageComponent::CaptureBaselineTuning()
 	AActor* Owner = GetOwner();
 	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
 	const UChaosWheeledVehicleMovementComponent* VehMove = Owner ? Owner->FindComponentByClass<UChaosWheeledVehicleMovementComponent>() : nullptr;
+
+	// Prefer live Chaos movement & wheel instance baselines once AWSPC2SportsCar has applied profile specs
+	if (VehMove && VehMove->Wheels.Num() >= 4)
+	{
+		BaseMaxTorque = FMath::Max(VehMove->EngineSetup.MaxTorque, 80.0f);
+		BaseDragCoefficient = VehMove->DragCoefficient;
+		BaseDownforceCoefficient = VehMove->DownforceCoefficient;
+		for (int32 w = 0; w < 4; ++w)
+		{
+			if (const UChaosVehicleWheel* W = VehMove->Wheels[w])
+			{
+				WheelBaseFriction[w] = W->FrictionForceMultiplier;
+				WheelBaseBrakeTorque[w] = W->MaxBrakeTorque;
+				WheelBaseSteerAngle[w] = W->MaxSteerAngle;
+				WheelBaseABS[w] = W->bABSEnabled;
+			}
+		}
+		bBaselinesCaptured = true;
+		return;
+	}
 
 	if (Tuning)
 	{
@@ -190,12 +282,68 @@ void UWSPC2VehicleDamageComponent::CaptureBaselineTuning()
 		}
 		bBaselinesCaptured = true;
 	}
-	else if (VehMove)
+}
+
+void UWSPC2VehicleDamageComponent::ConfigureFromVehicleProfile(
+	const FWSPC2VehicleProfileSpec& Spec,
+	const FVector InWheelHubPositions[4],
+	const float InWheelRadii[4])
+{
+	ArmorDamageScaleOverride = Spec.ArmorDamageScale;
+	GroundClearanceCm = FMath::Clamp(Spec.GroundClearanceCm, 10.0f, 52.0f);
+
+	const FVector SafeMin(
+		FMath::Min(Spec.EngineBlockMinCm.X, Spec.EngineBlockMaxCm.X),
+		FMath::Min(Spec.EngineBlockMinCm.Y, Spec.EngineBlockMaxCm.Y),
+		FMath::Min(Spec.EngineBlockMinCm.Z, Spec.EngineBlockMaxCm.Z));
+	const FVector SafeMax(
+		FMath::Max(Spec.EngineBlockMinCm.X, Spec.EngineBlockMaxCm.X),
+		FMath::Max(Spec.EngineBlockMinCm.Y, Spec.EngineBlockMaxCm.Y),
+		FMath::Max(Spec.EngineBlockMinCm.Z, Spec.EngineBlockMaxCm.Z));
+	EngineBlockBox = FBox(SafeMin, SafeMax);
+
+	for (int32 i = 0; i < 4; ++i)
 	{
-		BaseMaxTorque = FMath::Max(VehMove->EngineSetup.MaxTorque, 100.0f);
-		BaseDragCoefficient = VehMove->DragCoefficient;
-		BaseDownforceCoefficient = VehMove->DownforceCoefficient;
-		bBaselinesCaptured = true;
+		WheelHubPositions[i] = InWheelHubPositions[i];
+		WheelBaseRadii[i] = InWheelRadii[i] > 5.0f ? InWheelRadii[i] : 35.2f;
+	}
+
+	const float HalfTrackCm = FMath::Max(0.5f * FMath::Abs(InWheelHubPositions[1].Y - InWheelHubPositions[0].Y), 55.0f);
+	const float HalfWheelbaseCm = FMath::Max(0.5f * FMath::Abs(InWheelHubPositions[0].X - InWheelHubPositions[2].X), 85.0f);
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	if (Tuning && Tuning->DamageFloorTouchTwistOverrideDeg > 0.5f)
+	{
+		FloorTouchTwistDeg = Tuning->DamageFloorTouchTwistOverrideDeg;
+	}
+	else
+	{
+		const float EffectiveSpan = FMath::Lerp(HalfTrackCm, HalfWheelbaseCm, 0.35f);
+		FloorTouchTwistDeg = FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(GroundClearanceCm, EffectiveSpan)), 6.0f, 18.0f);
+	}
+
+	if (EngineHazardLight)
+	{
+		EngineHazardLight->SetRelativeLocation(EngineBlockBox.GetCenter() + FVector(0.0f, 0.0f, 18.0f));
+	}
+	if (HoodSteamComp)
+	{
+		HoodSteamComp->SetRelativeLocation(EngineBlockBox.GetCenter() + FVector(0.0f, 0.0f, 28.0f));
+	}
+	if (HoodSmokeComp)
+	{
+		HoodSmokeComp->SetRelativeLocation(EngineBlockBox.GetCenter() + FVector(0.0f, 0.0f, 24.0f));
+	}
+
+	UE_LOG(LogWSPC2, Log, TEXT("VehicleDamage [%s]: EngineBox=(%s..%s), GC=%.1f cm, FloorTouchTwistDeg=%.1f deg, Armor=%.2f"),
+		*GetNameSafe(GetOwner()), *SafeMin.ToCompactString(), *SafeMax.ToCompactString(), GroundClearanceCm, FloorTouchTwistDeg,
+		ArmorDamageScaleOverride > 0.01f ? ArmorDamageScaleOverride : (Spec.bIsPoliceCruiser ? (Tuning ? Tuning->PoliceArmorDamageScale : 0.58f) : 1.0f));
+}
+
+void UWSPC2VehicleDamageComponent::SetDetachedWheelVisualMeshOverride(int32 WheelIndex, UStaticMesh* Mesh)
+{
+	if (WheelIndex >= 0 && WheelIndex < 4)
+	{
+		WheelVisualOverrides[WheelIndex] = Mesh;
 	}
 }
 
@@ -225,6 +373,43 @@ void UWSPC2VehicleDamageComponent::SetupDamageRig(
 	if (RootPhysicsBody)
 	{
 		RootPhysicsBody->SetNotifyRigidBodyCollision(true);
+	}
+
+	if (AActor* Owner = GetOwner())
+	{
+		TInlineComponentArray<UPrimitiveComponent*> Primitives(Owner);
+		for (UPrimitiveComponent* Prim : Primitives)
+		{
+			if (Prim && Prim->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+			{
+				Prim->SetNotifyRigidBodyCollision(true);
+				if (Owner->HasAuthority())
+				{
+					Prim->OnComponentHit.AddUniqueDynamic(this, &UWSPC2VehicleDamageComponent::HandleComponentHit);
+				}
+			}
+		}
+	}
+
+	ClearContactDamageDecals();
+	if (DeformableChassis)
+	{
+		DeformableChassis->ResetAndDestroy(BodyMesh, GlassMesh);
+		DeformableChassis.Reset();
+	}
+	for (int32 i = 0; i < 9; ++i)
+	{
+		PanelStates[i] = 0;
+		AppliedPanelStates[i] = 0;
+	}
+	BrokenLightsMask = 0;
+	ShatteredGlassMask = 0;
+	AppliedShatteredGlassMask = 0;
+	ImpactHistory.Reset();
+	AppliedImpactCount = 0;
+	for (int32 i = 0; i < 5; ++i)
+	{
+		LightFlickerTimer[i] = 0.0f;
 	}
 
 	GlassCrackStage = 0;
@@ -273,6 +458,26 @@ void UWSPC2VehicleDamageComponent::SetupDamageRig(
 			{
 				HoodSmokeComp->SetRelativeLocation(FVector(HoodX - 6.0f, 0.0f, HoodZ + 4.0f));
 			}
+
+			const float HeadlightZ = FMath::Lerp(BodyBox.Min.Z, BodyBox.Max.Z, 0.42f);
+			const float TaillightZ = FMath::Lerp(BodyBox.Min.Z, BodyBox.Max.Z, 0.48f);
+			const float SideY = FMath::Max(45.0f, BodyBox.GetExtent().Y * 0.72f);
+			if (HeadlightSpots.IsValidIndex(0) && HeadlightSpots[0])
+			{
+				HeadlightSpots[0]->SetRelativeLocation(FVector(BodyBox.Max.X - 6.0f, -SideY, HeadlightZ));
+			}
+			if (HeadlightSpots.IsValidIndex(1) && HeadlightSpots[1])
+			{
+				HeadlightSpots[1]->SetRelativeLocation(FVector(BodyBox.Max.X - 6.0f, SideY, HeadlightZ));
+			}
+			if (TaillightGlows.IsValidIndex(0) && TaillightGlows[0])
+			{
+				TaillightGlows[0]->SetRelativeLocation(FVector(BodyBox.Min.X + 6.0f, -SideY, TaillightZ));
+			}
+			if (TaillightGlows.IsValidIndex(1) && TaillightGlows[1])
+			{
+				TaillightGlows[1]->SetRelativeLocation(FVector(BodyBox.Min.X + 6.0f, SideY, TaillightZ));
+			}
 		}
 	}
 
@@ -280,10 +485,13 @@ void UWSPC2VehicleDamageComponent::SetupDamageRig(
 	{
 		InitialGlassRelativeTransform = GlassMesh->GetRelativeTransform();
 		OriginalGlassMaterials.Reset();
+		GlassMIDs.Reset();
 		const int32 NumGlassMats = GlassMesh->GetNumMaterials();
 		for (int32 Slot = 0; Slot < NumGlassMats; ++Slot)
 		{
-			OriginalGlassMaterials.Add(GlassMesh->GetMaterial(Slot));
+			UMaterialInterface* GMat = GlassMesh->GetMaterial(Slot);
+			OriginalGlassMaterials.Add(GMat);
+			GlassMIDs.Add(GMat ? GlassMesh->CreateDynamicMaterialInstance(Slot, GMat) : nullptr);
 		}
 	}
 
@@ -335,8 +543,11 @@ void UWSPC2VehicleDamageComponent::TickComponent(float DeltaTime, ELevelTick Tic
 		CurrentSirenHealthFactor = 1.0f;
 	}
 
-	// Engine misfire / sputter cycles once radiator/engine block has moderate-to-heavy damage
-	const float EngineStress = FMath::Max(ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)], (100.0f - HealthPercent) * 0.0085f);
+	// Engine misfire / sputter cycles once radiator/engine block has moderate-to-heavy damage or >12% intrusion
+	const float EngineStress = FMath::Max3(
+		ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)],
+		(100.0f - HealthPercent) * 0.0085f,
+		EngineBlockIntrusionPct / 30.0f);
 	if (!bIsWrecked && EngineStress >= 0.36f)
 	{
 		if (MisfireCutRemaining > 0.0f)
@@ -371,6 +582,12 @@ void UWSPC2VehicleDamageComponent::TickComponent(float DeltaTime, ELevelTick Tic
 		return;
 	}
 
+	if (DeformableChassis && DeformableChassis->IsActive())
+	{
+		DeformableChassis->TickLoosePanels(DeltaTime, SpeedKmh);
+	}
+	UpdateDynamicCornerLights(DeltaTime);
+
 	HazardFlickerPhase += DeltaTime * 19.0f;
 
 	if (ImpactSparkLight && SparkFlashRemaining > 0.0f)
@@ -388,7 +605,7 @@ void UWSPC2VehicleDamageComponent::TickComponent(float DeltaTime, ELevelTick Tic
 
 	if (EngineHazardLight)
 	{
-		const bool bShowEngineFire = bIsWrecked || ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)] > 0.62f;
+		const bool bShowEngineFire = bIsWrecked || EngineBlockIntrusionPct >= 14.0f || ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)] > 0.62f;
 		EngineHazardLight->SetVisibility(bShowEngineFire);
 		if (bShowEngineFire)
 		{
@@ -397,24 +614,30 @@ void UWSPC2VehicleDamageComponent::TickComponent(float DeltaTime, ELevelTick Tic
 		}
 	}
 
-	// Continuous rim-on-asphalt sparks while rolling at speed on a punctured wheel
+	// Continuous rim, detached hub, or twisted underbody scraping sparks while moving
 	if (RimSparkComp)
 	{
-		int32 ActiveFlatWheel = -1;
+		int32 ActiveSparkWheel = -1;
 		for (int32 w = 0; w < 4; ++w)
 		{
-			if (bWheelPunctured[w])
+			if (IsWheelDetached(w) || bWheelPunctured[w])
 			{
-				ActiveFlatWheel = w;
+				ActiveSparkWheel = w;
 				break;
 			}
 		}
 
-		const bool bEmitRimSparks = (ActiveFlatWheel >= 0 && SpeedKmh > 16.0f);
-		if (bEmitRimSparks)
+		const bool bFloorScrape = (GetMaxChassisTwistDeg() >= FloorTouchTwistDeg * 0.80f);
+		const bool bBumperDrag = (DeformableChassis && DeformableChassis->IsAnyBumperDragging());
+		const bool bEmitSparks = ((ActiveSparkWheel >= 0 || bFloorScrape || bBumperDrag) && SpeedKmh > 12.0f);
+		if (bEmitSparks)
 		{
-			const FVector Hub = WheelHubPositions[ActiveFlatWheel];
-			RimSparkComp->SetRelativeLocation(FVector(Hub.X, Hub.Y, FMath::Max(6.0f, Hub.Z - WheelBaseRadii[ActiveFlatWheel] + 7.0f)));
+			const FVector SparkLoc = (ActiveSparkWheel >= 0)
+				? FVector(WheelHubPositions[ActiveSparkWheel].X, WheelHubPositions[ActiveSparkWheel].Y,
+					IsWheelDetached(ActiveSparkWheel) ? 6.0f : FMath::Max(6.0f, WheelHubPositions[ActiveSparkWheel].Z - WheelBaseRadii[ActiveSparkWheel] + 7.0f))
+				: (bBumperDrag ? FVector((DeformableChassis->GetPanelState(EWSPC2DetachablePanel::FrontBumper) == EWSPC2PanelDamageState::Loose) ? 235.0f : -235.0f, 0.0f, 8.0f)
+					: FVector(0.0f, (ChassisTwistDeg.X >= 0.0f ? 62.0f : -62.0f), 6.0f));
+			RimSparkComp->SetRelativeLocation(SparkLoc);
 			if (!RimSparkComp->IsActive())
 			{
 				RimSparkComp->Activate(true);
@@ -425,6 +648,11 @@ void UWSPC2VehicleDamageComponent::TickComponent(float DeltaTime, ELevelTick Tic
 			RimSparkComp->Deactivate();
 		}
 	}
+}
+
+void UWSPC2VehicleDamageComponent::HandleComponentHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	HandleActorHit(GetOwner(), OtherActor, NormalImpulse, Hit);
 }
 
 void UWSPC2VehicleDamageComponent::HandleActorHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
@@ -499,15 +727,31 @@ void UWSPC2VehicleDamageComponent::ApplyDirectImpact(const FVector& WorldImpactP
 	const float MinSpeed = Tuning ? Tuning->DamageMinSpeedKmh : 6.5f;
 	const float SevereSpeed = Tuning ? Tuning->DamageSevereSpeedKmh : 105.0f;
 	const float SevereImpulse = Tuning ? Tuning->DamageSevereImpulse : 3800000.0f;
-	const float ArmorScale = bIsPoliceCruiser ? (Tuning ? Tuning->PoliceArmorDamageScale : 0.58f) : 1.0f;
+	const float ArmorScale = (ArmorDamageScaleOverride > 0.01f)
+		? ArmorDamageScaleOverride
+		: (bIsPoliceCruiser ? (Tuning ? Tuning->PoliceArmorDamageScale : 0.58f) : 1.0f);
 	const float HealthMult = Tuning ? Tuning->DamageZoneToHealthScale : 27.5f;
 	const float BlowoutSev = Tuning ? Tuning->DamageWheelBlowoutSeverity : 0.60f;
+	const float BendSev = Tuning ? Tuning->DamageWheelBendSeverity : 0.35f;
+	const float DetachSev = Tuning ? Tuning->DamageWheelDetachSeverity : 0.80f;
 
 	const float SpeedFactor = FMath::Max(0.0f, (ImpactSpeedKmh - (MinSpeed * 0.65f)) / FMath::Max(SevereSpeed - MinSpeed, 20.0f));
 	const float ImpulseFactor = ImpulseMagnitude / FMath::Max(SevereImpulse, 100000.0f);
 	const float Severity = FMath::Clamp(FMath::Max(SpeedFactor, ImpulseFactor), 0.04f, 1.45f);
 
 	const FVector LocalHit = Owner->GetActorTransform().InverseTransformPosition(WorldImpactPoint);
+	FVector LocalNormal = Owner->GetActorTransform().InverseTransformVectorNoScale(WorldImpactNormal).GetSafeNormal();
+	if (LocalNormal.IsNearlyZero())
+	{
+		LocalNormal = -LocalHit.GetSafeNormal();
+	}
+	// Resolve reliable inward crush vector pointing toward vehicle interior regardless of caller normal sign convention
+	FVector InwardDir = LocalNormal;
+	if (FVector::DotProduct(InwardDir, -LocalHit.GetSafeNormal()) < -0.15f)
+	{
+		InwardDir = -LocalNormal;
+	}
+	InwardDir = InwardDir.GetSafeNormal();
 	const float UpDot = FVector::DotProduct(FVector::UpVector, Owner->GetActorUpVector());
 
 	EWSPC2DamageZone Zone = EWSPC2DamageZone::Front;
@@ -528,15 +772,50 @@ void UWSPC2VehicleDamageComponent::ApplyDirectImpact(const FVector& WorldImpactP
 	ZoneDamage[ZoneIdx] = FMath::Clamp(ZoneDamage[ZoneIdx] + Severity * 0.44f * ArmorScale, 0.0f, 1.0f);
 
 	HealthPercent = FMath::Clamp(HealthPercent - Severity * HealthMult * ArmorScale, 0.0f, 100.0f);
-	bIsWrecked = (HealthPercent <= 0.0f);
+	if (HealthPercent <= 0.0f && !bIsWrecked)
+	{
+		TriggerVehicleDisabled(EWSPC2VehicleDisableReason::HealthDepleted);
+	}
 	++CollisionCount;
 	PropertyDamageDollars += FMath::Max(55, FMath::RoundToInt(Severity * 1750.0f));
 
-	// Deplete per-wheel integrity on corner impacts; blow out tyre immediately on heavy impact or accumulated abuse
+	// Rule 1: Engine block intrusion (> 30% estimated penetration disables the vehicle immediately)
+	EvaluateEngineBlockIntrusion(LocalHit, InwardDir, Severity, ArmorScale);
+
+	// Rule 3: Structural chassis torsion/twist (> X deg where floorpan contacts ground disables the vehicle)
+	EvaluateChassisTwist(LocalHit, InwardDir, Severity, ArmorScale);
+
+	// Localized dent & scratch slot for M_WSPC2_VehicleDamage
+	RecordImpactDeformSlot(LocalHit, InwardDir, Severity);
+
+	// Burnout / Wreckfest real-time 3D sheet-metal crumpling, detachable panels & shattering lights
+	EnsureDeformableChassis();
+	// Outer sheet metal crumples visibly even on armored police cruisers, while engine/chassis integrity retains ArmorScale
+	const float VisualArmorScale = FMath::Lerp(ArmorScale, 1.0f, 0.65f);
+	FWSPC2MeshImpactRecord MeshRec;
+	MeshRec.LocalPos = LocalHit;
+	MeshRec.InwardDir = InwardDir;
+	MeshRec.Severity = Severity;
+	MeshRec.RadiusCm = FMath::Clamp(58.0f + Severity * 62.0f, 52.0f, 136.0f);
+	MeshRec.DepthCm = FMath::Clamp(Severity * 52.0f * VisualArmorScale, 10.0f, 62.0f);
+	if (ImpactHistory.Num() >= 16)
+	{
+		ImpactHistory.RemoveAt(0);
+	}
+	ImpactHistory.Add(MeshRec);
+	if (DeformableChassis && DeformableChassis->IsActive())
+	{
+		DeformableChassis->ApplyPlasticImpact(MeshRec, ChassisTwistDeg, FloorTouchTwistDeg);
+		AppliedImpactCount = ImpactHistory.Num();
+		SpawnLocalizedContactDecal(LocalHit, InwardDir, Severity);
+	}
+	EvaluatePanelsAndLightsFromImpact(LocalHit, WorldImpactNormal, Severity, ImpactSpeedKmh, Zone);
+
+	// Corner wheel damage: progressive bend/camber/toe/wobble, blowout, and detachment (Rule 2: >=2 wheels disables)
 	if (Zone != EWSPC2DamageZone::Roof && Severity >= 0.16f)
 	{
 		int32 BestWheel = -1;
-		float BestDist = 132.0f;
+		float BestDist = 145.0f;
 		for (int32 w = 0; w < 4; ++w)
 		{
 			if (!WheelHubPositions[w].IsNearlyZero())
@@ -552,19 +831,32 @@ void UWSPC2VehicleDamageComponent::ApplyDirectImpact(const FVector& WorldImpactP
 
 		if (BestWheel >= 0)
 		{
-			const float ProxAlpha = FMath::Clamp(1.0f - (BestDist / 132.0f) * 0.45f, 0.55f, 1.0f);
-			WheelHealth[BestWheel] = FMath::Clamp(WheelHealth[BestWheel] - Severity * ProxAlpha * ArmorScale * 0.90f, 0.0f, 1.0f);
+			const float ProxAlpha = FMath::Clamp(1.0f - (BestDist / 145.0f) * 0.45f, 0.55f, 1.0f);
+			// Wheels and suspension hubs are exposed outside the armored body shell
+			const float WheelArmorScale = FMath::Lerp(ArmorScale, 1.0f, 0.45f);
+			const float CornerSev = Severity * ProxAlpha * WheelArmorScale;
+			WheelHealth[BestWheel] = FMath::Clamp(WheelHealth[BestWheel] - CornerSev * 0.90f, 0.0f, 1.0f);
+
+			if (CornerSev >= BendSev || WheelHealth[BestWheel] < 0.72f)
+			{
+				WheelBentAmount[BestWheel] = FMath::Clamp(WheelBentAmount[BestWheel] + CornerSev * 0.70f, 0.0f, 1.0f);
+			}
 
 			const float Threshold = bIsPoliceCruiser ? BlowoutSev : BlowoutSev * 0.72f;
 			if (WheelHealth[BestWheel] <= 0.0f || Severity >= Threshold)
 			{
 				PunctureWheel(BestWheel);
 			}
+
+			if (!IsWheelDetached(BestWheel) && (CornerSev >= DetachSev || (IsWheelPunctured(BestWheel) && WheelHealth[BestWheel] <= 0.14f)))
+			{
+				DetachWheel(BestWheel, WorldImpactNormal, ImpactSpeedKmh);
+			}
 		}
 	}
 
-	// Catastrophic wreck can burst a weakened wheel on the hardest-hit corner
-	if (bIsWrecked && GetPuncturedWheelCount() == 0)
+	// Catastrophic health wreck can burst a weakened wheel on the hardest-hit corner
+	if (bIsWrecked && GetPuncturedWheelCount() == 0 && GetDetachedWheelCount() == 0)
 	{
 		const int32 WorstCornerWheel = (ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)] >= ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Rear)])
 			? ((ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Right)] >= ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Left)]) ? 1 : 0)
@@ -583,11 +875,232 @@ void UWSPC2VehicleDamageComponent::ApplyDirectImpact(const FVector& WorldImpactP
 	TriggerImpactBurstFX(WorldImpactPoint, WorldImpactNormal, Severity);
 	RefreshAllDamageSystems();
 
-	UE_LOG(LogWSPC2, Log, TEXT("ChaosDamage [%s]: tier=%s zone=%d severity=%.2f speed=%.1f km/h impulse=%.0f -> health=%.1f%% eng=%.0f%% prop=$%d tyresFlat=%d"),
-		*GetNameSafe(Owner), GetDamageStageName(), ZoneIdx, Severity, ImpactSpeedKmh, ImpulseMagnitude,
-		HealthPercent, GetEngineHealthTorqueFactor() * 100.0f, PropertyDamageDollars, GetPuncturedWheelCount());
+	UE_LOG(LogWSPC2, Log, TEXT("ChaosDamage [%s]: tier=%s reason=%s zone=%d sev=%.2f speed=%.1f -> hull=%.1f%% eng=%.0f%% engIntrus=%.1f%% twist=%.1f/%.1f deg flat=%d det=%d"),
+		*GetNameSafe(Owner), GetDamageStageName(), GetDisableReasonName(), ZoneIdx, Severity, ImpactSpeedKmh,
+		HealthPercent, GetEngineHealthTorqueFactor() * 100.0f, EngineBlockIntrusionPct,
+		GetMaxChassisTwistDeg(), FloorTouchTwistDeg, GetPuncturedWheelCount(), GetDetachedWheelCount());
 
 	OnVehicleDamaged.Broadcast(Zone, Severity, HealthPercent);
+}
+
+void UWSPC2VehicleDamageComponent::EvaluateEngineBlockIntrusion(const FVector& LocalHit, const FVector& InwardDir, float Severity, float ArmorScale)
+{
+	if (!EngineBlockBox.IsValid)
+	{
+		return;
+	}
+
+	// Project wide Chaos bumper/corner contacts toward the engine bay on axial impacts
+	FVector EvalHit = LocalHit;
+	const FVector BoxCenter = EngineBlockBox.GetCenter();
+	const float AxialAlign = FMath::Abs(InwardDir.X);
+	const bool bSameEndAsEngine = (BoxCenter.X >= 0.0f && LocalHit.X > 30.0f) || (BoxCenter.X < 0.0f && LocalHit.X < -30.0f);
+	if (AxialAlign > 0.55f && bSameEndAsEngine)
+	{
+		const float PullAlpha = FMath::GetMappedRangeValueClamped(FVector2f(0.55f, 0.90f), FVector2f(0.45f, 0.85f), AxialAlign);
+		const float ClampedY = FMath::Clamp(EvalHit.Y, EngineBlockBox.Min.Y + 8.0f, EngineBlockBox.Max.Y - 8.0f);
+		const float ClampedZ = FMath::Clamp(EvalHit.Z, EngineBlockBox.Min.Z + 10.0f, EngineBlockBox.Max.Z - 10.0f);
+		EvalHit.Y = FMath::Lerp(EvalHit.Y, ClampedY, PullAlpha);
+		EvalHit.Z = FMath::Lerp(EvalHit.Z, ClampedZ, PullAlpha);
+	}
+
+	const float RadiusCm = 28.0f + Severity * 30.0f;
+	const float ReachArmor = (ArmorScale >= 0.40f) ? FMath::Max(ArmorScale, 0.65f) : ArmorScale;
+	const float ReachCm = FMath::Clamp(Severity * ReachArmor * 102.0f, 12.0f, 125.0f);
+	const FBox ExpandedBox = EngineBlockBox.ExpandBy(RadiusCm * 0.55f);
+
+	// Sample along the inward crush path from impact point to max crush reach
+	float MaxPenRatio = 0.0f;
+	const FVector BoxExtent = EngineBlockBox.GetExtent().ComponentMax(FVector(18.0f));
+	for (int32 Step = 1; Step <= 6; ++Step)
+	{
+		const FVector Sample = EvalHit + InwardDir * (ReachCm * (static_cast<float>(Step) / 6.0f));
+		if (ExpandedBox.IsInside(Sample))
+		{
+			const FVector Closest = EngineBlockBox.GetClosestPointTo(Sample);
+			const float DistOutside = FVector::Dist(Sample, Closest);
+			if (DistOutside <= RadiusCm * 0.55f)
+			{
+				// Measure inward penetration depth relative to the engine box size along InwardDir
+				const float PenDepth = EngineBlockBox.IsInside(Sample)
+					? FMath::Min3(
+						FMath::Min(Sample.X - EngineBlockBox.Min.X, EngineBlockBox.Max.X - Sample.X),
+						FMath::Min(Sample.Y - EngineBlockBox.Min.Y, EngineBlockBox.Max.Y - Sample.Y),
+						FMath::Min(Sample.Z - EngineBlockBox.Min.Z, EngineBlockBox.Max.Z - Sample.Z)) + ReachCm * 0.25f
+					: FMath::Max(0.0f, RadiusCm * 0.55f - DistOutside);
+				const float RefSpan = FMath::Max(25.0f, 2.0f * FVector::DotProduct(BoxExtent, InwardDir.GetAbs()));
+				MaxPenRatio = FMath::Max(MaxPenRatio, PenDepth / RefSpan);
+			}
+		}
+	}
+
+	if (MaxPenRatio <= 0.001f)
+	{
+		return;
+	}
+
+	const float DeltaPct = FMath::Clamp(MaxPenRatio * 95.0f * Severity * FMath::Max(ArmorScale, 0.35f), 2.0f, 45.0f);
+	EngineBlockIntrusionPct = FMath::Clamp(EngineBlockIntrusionPct + DeltaPct, 0.0f, 100.0f);
+
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	const float DisablePct = Tuning ? Tuning->DamageEngineIntrusionDisablePct : 30.0f;
+	if (EngineBlockIntrusionPct > DisablePct)
+	{
+		TriggerVehicleDisabled(EWSPC2VehicleDisableReason::EngineBlockCrushed);
+	}
+}
+
+void UWSPC2VehicleDamageComponent::EvaluateChassisTwist(const FVector& LocalHit, const FVector& InwardDir, float Severity, float ArmorScale)
+{
+	if (Severity < 0.24f)
+	{
+		return;
+	}
+
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	const float DegPerSev = Tuning ? Tuning->DamageChassisTwistPerSeverityDeg : 4.2f;
+
+	const FVector NormHit = LocalHit.GetSafeNormal();
+	const FVector TorqueLever = FVector::CrossProduct(NormHit, InwardDir);
+	// Side/corner/roll hits twist Roll (X); high front/rear or roof crush buckle Pitch (Y); off-center corner hits skew Yaw (Z)
+	const float RollDelta = (TorqueLever.X * 1.15f + InwardDir.Y * (LocalHit.Z > 65.0f ? 0.55f : -0.45f) + (LocalHit.Z > 110.0f ? 0.60f : 0.0f)) * Severity * ArmorScale * DegPerSev;
+	const float PitchDelta = (TorqueLever.Y * 0.95f + (LocalHit.Z > 110.0f ? -0.95f : (InwardDir.X * (LocalHit.Z > 70.0f ? -0.5f : 0.45f)))) * Severity * ArmorScale * DegPerSev;
+	const float YawDelta = TorqueLever.Z * 1.10f * Severity * ArmorScale * DegPerSev;
+
+	ChassisTwistDeg.X = FMath::Clamp(ChassisTwistDeg.X + RollDelta, -25.0f, 25.0f);
+	ChassisTwistDeg.Y = FMath::Clamp(ChassisTwistDeg.Y + PitchDelta, -25.0f, 25.0f);
+	ChassisTwistDeg.Z = FMath::Clamp(ChassisTwistDeg.Z + YawDelta, -25.0f, 25.0f);
+
+	if (GetMaxChassisTwistDeg() > FloorTouchTwistDeg)
+	{
+		TriggerVehicleDisabled(EWSPC2VehicleDisableReason::ChassisTwisted);
+	}
+}
+
+void UWSPC2VehicleDamageComponent::RecordImpactDeformSlot(const FVector& LocalHit, const FVector& InwardDir, float Severity)
+{
+	if (Severity < 0.14f)
+	{
+		return;
+	}
+
+	const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+	const float MaxDepth = Tuning ? Tuning->DamageMaxDeformDepthCm : 26.0f;
+	const float NewDepth = FMath::Clamp(Severity * 22.0f, 2.5f, MaxDepth);
+	const float NewRadius = FMath::Clamp(32.0f + Severity * 34.0f, 28.0f, 76.0f);
+
+	// Merge into closest existing slot within 38 cm so repeated hits deepen the dent cleanly
+	for (int32 i = 0; i < 4; ++i)
+	{
+		if (DeformSlots[i].DepthCm > 0.1f && FVector::Dist(FVector(DeformSlots[i].LocalPos), LocalHit) < 38.0f)
+		{
+			DeformSlots[i].DepthCm = FMath::Clamp(DeformSlots[i].DepthCm + NewDepth * 0.6f, 2.5f, MaxDepth);
+			DeformSlots[i].RadiusCm = FMath::Max(DeformSlots[i].RadiusCm, NewRadius);
+			return;
+		}
+	}
+
+	DeformSlots[NextDeformSlot].LocalPos = LocalHit;
+	DeformSlots[NextDeformSlot].InwardDir = InwardDir;
+	DeformSlots[NextDeformSlot].RadiusCm = NewRadius;
+	DeformSlots[NextDeformSlot].DepthCm = NewDepth;
+	NextDeformSlot = (NextDeformSlot + 1) % 4;
+}
+
+void UWSPC2VehicleDamageComponent::TriggerVehicleDisabled(EWSPC2VehicleDisableReason Reason)
+{
+	bIsWrecked = true;
+	if (DisableReason == EWSPC2VehicleDisableReason::None || Reason == EWSPC2VehicleDisableReason::EngineBlockCrushed
+		|| Reason == EWSPC2VehicleDisableReason::TwoWheelsLost || Reason == EWSPC2VehicleDisableReason::ChassisTwisted)
+	{
+		DisableReason = Reason;
+	}
+	UE_LOG(LogWSPC2, Log, TEXT("ChaosDamage [%s]: VEHICLE DISABLED -> reason=%s (engineIntrusion=%.1f%%, detachedWheels=%d, maxTwist=%.1f/%.1f deg)"),
+		*GetNameSafe(GetOwner()), GetDisableReasonName(), EngineBlockIntrusionPct, GetDetachedWheelCount(), GetMaxChassisTwistDeg(), FloorTouchTwistDeg);
+}
+
+void UWSPC2VehicleDamageComponent::DetachWheel(int32 WheelIndex, const FVector& ImpulseDir, float SpeedKmh)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || !Owner->HasAuthority() || WheelIndex < 0 || WheelIndex >= 4)
+	{
+		return;
+	}
+
+	const uint8 Bit = static_cast<uint8>(1u << WheelIndex);
+	const bool bAlreadyDetached = (DetachedWheelMask & Bit) != 0;
+	DetachedWheelMask |= Bit;
+	PuncturedWheelMask |= Bit;
+	WheelHealth[WheelIndex] = 0.0f;
+	WheelBentAmount[WheelIndex] = 1.0f;
+	RecalculateWheelCamberAndFlags();
+
+	if (!bAlreadyDetached)
+	{
+		SpawnDetachedWheelActor(WheelIndex, ImpulseDir, SpeedKmh);
+
+		const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+		const int32 NeededToDisable = Tuning ? Tuning->DamageDetachedWheelsToDisable : 2;
+		if (GetDetachedWheelCount() >= NeededToDisable)
+		{
+			TriggerVehicleDisabled(EWSPC2VehicleDisableReason::TwoWheelsLost);
+		}
+		RefreshAllDamageSystems();
+		UE_LOG(LogWSPC2, Log, TEXT("ChaosDamage [%s]: Wheel %d DETACHED! Detached count=%d/%d."),
+			*GetNameSafe(Owner), WheelIndex, GetDetachedWheelCount(), NeededToDisable);
+	}
+}
+
+void UWSPC2VehicleDamageComponent::SpawnDetachedWheelActor(int32 WheelIndex, const FVector& ImpulseDir, float SpeedKmh)
+{
+	AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	if (!Owner || !World || GetNetMode() == NM_DedicatedServer || WheelIndex < 0 || WheelIndex >= 4)
+	{
+		return;
+	}
+
+	UStaticMesh* WheelMeshAsset = WheelVisualOverrides[WheelIndex].Get();
+	if (!WheelMeshAsset && WheelMeshes.IsValidIndex(WheelIndex) && WheelMeshes[WheelIndex])
+	{
+		WheelMeshAsset = WheelMeshes[WheelIndex]->GetStaticMesh();
+	}
+	if (!WheelMeshAsset)
+	{
+		return;
+	}
+
+	const FVector HubWorld = Owner->GetActorTransform().TransformPosition(WheelHubPositions[WheelIndex]);
+	const FVector OutwardSide = ((WheelIndex % 2) == 1 ? 1.0f : -1.0f) * Owner->GetActorRightVector();
+	const FVector SpawnPos = HubWorld + OutwardSide * 28.0f + FVector(0.0f, 0.0f, 12.0f);
+	const FRotator SpawnRot = Owner->GetActorRotation() + FRotator(0.0f, (WheelIndex % 2) == 1 ? 180.0f : 0.0f, 0.0f);
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* LooseWheel = World->SpawnActor<AStaticMeshActor>(SpawnPos, SpawnRot, Params);
+	if (!LooseWheel)
+	{
+		return;
+	}
+
+	UStaticMeshComponent* MeshComp = LooseWheel->GetStaticMeshComponent();
+	LooseWheel->SetMobility(EComponentMobility::Movable);
+	MeshComp->SetStaticMesh(WheelMeshAsset);
+	MeshComp->SetCollisionProfileName(TEXT("PhysicsActor"));
+	MeshComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+	MeshComp->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	MeshComp->SetSimulatePhysics(true);
+	MeshComp->SetMassOverrideInKg(NAME_None, 24.0f, true);
+
+	const FVector EjectVec = (OutwardSide * 0.75f + FVector(0.0f, 0.0f, 0.45f) + ImpulseDir.GetSafeNormal() * 0.35f).GetSafeNormal();
+	const float EjectSpeed = FMath::Clamp(SpeedKmh * 14.0f + 420.0f, 420.0f, 1450.0f);
+	MeshComp->SetPhysicsLinearVelocity(Owner->GetVelocity() * 0.55f + EjectVec * EjectSpeed);
+	MeshComp->SetPhysicsAngularVelocityInDegrees(FVector(
+		FMath::FRandRange(-420.0f, 420.0f),
+		FMath::FRandRange(-680.0f, 680.0f),
+		FMath::FRandRange(-360.0f, 360.0f)));
+	LooseWheel->SetLifeSpan(25.0f);
+	SpawnedDetachedWheels.Add(LooseWheel);
 }
 
 void UWSPC2VehicleDamageComponent::PunctureWheel(int32 WheelIndex)
@@ -628,13 +1141,56 @@ void UWSPC2VehicleDamageComponent::RepairAll()
 	for (int32 w = 0; w < 4; ++w)
 	{
 		WheelHealth[w] = 1.0f;
+		WheelBentAmount[w] = 0.0f;
 		bWheelPunctured[w] = false;
 		WheelCamberTiltDeg[w] = 0.0f;
+		WheelToeTiltDeg[w] = 0.0f;
+		WheelFrictionScale[w] = 1.0f;
 	}
 
 	PuncturedWheelMask = 0;
+	DetachedWheelMask = 0;
+	EngineBlockIntrusionPct = 0.0f;
+	ChassisTwistDeg = FVector::ZeroVector;
+	DisableReason = EWSPC2VehicleDisableReason::None;
+	NextDeformSlot = 0;
+	LastVisualDetachedMask = 0;
+	for (int32 s = 0; s < 4; ++s)
+	{
+		DeformSlots[s] = FWSPC2ImpactDeformSlot();
+	}
+	for (int32 p = 0; p < 9; ++p)
+	{
+		PanelStates[p] = 0;
+		AppliedPanelStates[p] = 0;
+	}
+	BrokenLightsMask = 0;
+	ShatteredGlassMask = 0;
+	AppliedShatteredGlassMask = 0;
+	ImpactHistory.Reset();
+	AppliedImpactCount = 0;
+	for (int32 i = 0; i < 5; ++i)
+	{
+		LightFlickerTimer[i] = 0.0f;
+	}
+	ClearContactDamageDecals();
+	if (DeformableChassis)
+	{
+		DeformableChassis->ResetAndDestroy(BodyMesh, GlassMesh);
+		DeformableChassis.Reset();
+	}
+	for (AStaticMeshActor* LooseWheel : SpawnedDetachedWheels)
+	{
+		if (IsValid(LooseWheel))
+		{
+			LooseWheel->Destroy();
+		}
+	}
+	SpawnedDetachedWheels.Reset();
+
 	HealthPercent = 100.0f;
 	bIsWrecked = false;
+
 	GlassCrackStage = 0;
 	bSideGlassFractured = false;
 	bLightbarFractured = false;
@@ -662,11 +1218,17 @@ void UWSPC2VehicleDamageComponent::RepairAll()
 	if (GlassMesh && bRigConfigured)
 	{
 		GlassMesh->SetRelativeTransform(InitialGlassRelativeTransform);
+		GlassMIDs.Reset();
 		for (int32 Slot = 0; Slot < OriginalGlassMaterials.Num(); ++Slot)
 		{
 			if (OriginalGlassMaterials[Slot])
 			{
-				GlassMesh->SetMaterial(Slot, OriginalGlassMaterials[Slot]);
+				UMaterialInstanceDynamic* GMID = GlassMesh->CreateDynamicMaterialInstance(Slot, OriginalGlassMaterials[Slot]);
+				GlassMIDs.Add(GMID);
+			}
+			else
+			{
+				GlassMIDs.Add(nullptr);
 			}
 		}
 	}
@@ -715,6 +1277,348 @@ void UWSPC2VehicleDamageComponent::OnRep_LastImpact()
 	}
 }
 
+void UWSPC2VehicleDamageComponent::OnRep_MeshDeformState()
+{
+	SyncDeformableChassisFromState();
+}
+
+void UWSPC2VehicleDamageComponent::EnsureDeformableChassis()
+{
+	if (DeformableChassis && DeformableChassis->IsActive())
+	{
+		return;
+	}
+	AActor* Owner = GetOwner();
+	if (!Owner || !BodyMesh)
+	{
+		return;
+	}
+	USceneComponent* AttachParent = BodyMesh->GetAttachParent() ? BodyMesh->GetAttachParent() : Owner->GetRootComponent();
+	if (!AttachParent)
+	{
+		return;
+	}
+	if (!DeformableChassis)
+	{
+		DeformableChassis = MakeUnique<FWSPC2DeformableChassis>();
+	}
+	DeformableChassis->BuildFromStaticMeshes(Owner, AttachParent, BodyMesh, GlassMesh, EngineBlockBox, BodyMIDs, GlassMIDs);
+}
+
+void UWSPC2VehicleDamageComponent::SyncDeformableChassisFromState()
+{
+	if (ImpactHistory.Num() == 0 && BrokenLightsMask == 0 && ShatteredGlassMask == 0)
+	{
+		ClearContactDamageDecals();
+		if (DeformableChassis)
+		{
+			DeformableChassis->ResetAndDestroy(BodyMesh, GlassMesh);
+			DeformableChassis.Reset();
+		}
+		AppliedImpactCount = 0;
+		AppliedShatteredGlassMask = 0;
+		for (int32 p = 0; p < 9; ++p)
+		{
+			AppliedPanelStates[p] = 0;
+		}
+		return;
+	}
+
+	EnsureDeformableChassis();
+	if (!DeformableChassis || !DeformableChassis->IsActive())
+	{
+		return;
+	}
+
+	while (AppliedImpactCount < ImpactHistory.Num())
+	{
+		const FWSPC2MeshImpactRecord& Rec = ImpactHistory[AppliedImpactCount];
+		DeformableChassis->ApplyPlasticImpact(Rec, ChassisTwistDeg, FloorTouchTwistDeg);
+		SpawnLocalizedContactDecal(Rec.LocalPos, Rec.InwardDir, Rec.Severity);
+		++AppliedImpactCount;
+	}
+
+	const FVector ImpulseDir = LastImpact.WorldNormal.IsNearlyZero() ? FVector::UpVector : FVector(LastImpact.WorldNormal);
+	const float SpeedKmh = GetOwner() ? (GetOwner()->GetVelocity().Size() * 0.036f) : 45.0f;
+
+	for (int32 p = 0; p < 9; ++p)
+	{
+		if (PanelStates[p] > AppliedPanelStates[p])
+		{
+			DeformableChassis->SetPanelState(
+				static_cast<EWSPC2DetachablePanel>(p),
+				static_cast<EWSPC2PanelDamageState>(PanelStates[p]),
+				ImpulseDir,
+				SpeedKmh);
+			AppliedPanelStates[p] = PanelStates[p];
+		}
+	}
+
+	for (int32 g = 0; g < 9; ++g)
+	{
+		const uint8 Bit = static_cast<uint8>(1u << g);
+		if ((ShatteredGlassMask & Bit) != 0 && (AppliedShatteredGlassMask & Bit) == 0)
+		{
+			DeformableChassis->ShatterGlassZone(static_cast<EWSPC2GlassZone>(g), ImpulseDir, SpeedKmh, GenericGlassFractured);
+			AppliedShatteredGlassMask |= Bit;
+		}
+	}
+}
+
+void UWSPC2VehicleDamageComponent::BreakCornerLight(int32 LightIndex, EWSPC2GlassZone GlassZone, const FVector& ImpulseDir, float ImpactSpeedKmh)
+{
+	if (LightIndex >= 0 && LightIndex < 5)
+	{
+		const uint8 LightBit = static_cast<uint8>(1u << LightIndex);
+		if ((BrokenLightsMask & LightBit) == 0)
+		{
+			BrokenLightsMask |= LightBit;
+			LightFlickerTimer[LightIndex] = 0.65f;
+		}
+	}
+	const int32 GIdx = static_cast<int32>(GlassZone);
+	if (GIdx >= 0 && GIdx < 9)
+	{
+		const uint8 GBit = static_cast<uint8>(1u << GIdx);
+		if ((ShatteredGlassMask & GBit) == 0)
+		{
+			ShatteredGlassMask |= GBit;
+			if (DeformableChassis && DeformableChassis->IsActive())
+			{
+				DeformableChassis->ShatterGlassZone(GlassZone, ImpulseDir, ImpactSpeedKmh, GenericGlassFractured);
+				AppliedShatteredGlassMask |= GBit;
+			}
+		}
+	}
+}
+
+void UWSPC2VehicleDamageComponent::EvaluatePanelsAndLightsFromImpact(
+	const FVector& LocalHit,
+	const FVector& WorldImpactNormal,
+	float Severity,
+	float ImpactSpeedKmh,
+	EWSPC2DamageZone Zone)
+{
+	const float Front = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)];
+	const float Rear = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Rear)];
+	const float Left = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Left)];
+	const float Right = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Right)];
+	const float Roof = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Roof)];
+
+	auto PromotePanel = [&](EWSPC2DetachablePanel Panel, EWSPC2PanelDamageState TargetState)
+	{
+		const int32 PIdx = static_cast<int32>(Panel);
+		const uint8 TargetU8 = static_cast<uint8>(TargetState);
+		if (PanelStates[PIdx] < TargetU8)
+		{
+			PanelStates[PIdx] = TargetU8;
+			if (DeformableChassis && DeformableChassis->IsActive())
+			{
+				DeformableChassis->SetPanelState(Panel, TargetState, WorldImpactNormal, ImpactSpeedKmh);
+				AppliedPanelStates[PIdx] = TargetU8;
+			}
+		}
+	};
+
+	// Front bumper & pushbar + Hood latch failure
+	if (Zone == EWSPC2DamageZone::Front || LocalHit.X > 90.0f)
+	{
+		if (Front >= 0.36f || Severity >= 0.70f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::FrontBumper, EWSPC2PanelDamageState::Detached);
+		}
+		else if (Front >= 0.14f || Severity >= 0.32f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::FrontBumper, EWSPC2PanelDamageState::Loose);
+		}
+
+		if (Front >= 0.68f || EngineBlockIntrusionPct >= 24.0f || Severity >= 1.22f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::Hood, EWSPC2PanelDamageState::Detached);
+		}
+		else if (Front >= 0.24f || Severity >= 0.52f || EngineBlockIntrusionPct >= 6.0f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::Hood, EWSPC2PanelDamageState::Loose);
+		}
+
+		// Headlights shatter per impacted corner (broad barrier impacts break both)
+		if (Severity >= 0.22f || Front >= 0.16f)
+		{
+			const bool bBroadFront = FMath::Abs(WorldImpactNormal.X) > 0.45f || Severity >= 0.52f;
+			if (bBroadFront || LocalHit.Y <= 25.0f)
+			{
+				BreakCornerLight(0, EWSPC2GlassZone::Headlight_FL, WorldImpactNormal, ImpactSpeedKmh);
+			}
+			if (bBroadFront || LocalHit.Y >= -25.0f)
+			{
+				BreakCornerLight(1, EWSPC2GlassZone::Headlight_FR, WorldImpactNormal, ImpactSpeedKmh);
+			}
+		}
+
+		if (Front >= 0.65f || Severity >= 1.05f)
+		{
+			BreakCornerLight(-1, EWSPC2GlassZone::Windshield, WorldImpactNormal, ImpactSpeedKmh);
+		}
+	}
+
+	// Rear bumper & trunk decklid + Taillights
+	if (Zone == EWSPC2DamageZone::Rear || LocalHit.X < -90.0f)
+	{
+		if (Rear >= 0.36f || Severity >= 0.70f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::RearBumper, EWSPC2PanelDamageState::Detached);
+		}
+		else if (Rear >= 0.14f || Severity >= 0.32f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::RearBumper, EWSPC2PanelDamageState::Loose);
+		}
+
+		if (Rear >= 0.66f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::Trunk, EWSPC2PanelDamageState::Detached);
+		}
+		else if (Rear >= 0.26f || Severity >= 0.55f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::Trunk, EWSPC2PanelDamageState::Loose);
+		}
+
+		if (Severity >= 0.22f || Rear >= 0.16f)
+		{
+			const bool bBroadRear = Severity >= 0.52f;
+			if (bBroadRear || LocalHit.Y <= 25.0f)
+			{
+				BreakCornerLight(2, EWSPC2GlassZone::Taillight_RL, WorldImpactNormal, ImpactSpeedKmh);
+			}
+			if (bBroadRear || LocalHit.Y >= -25.0f)
+			{
+				BreakCornerLight(3, EWSPC2GlassZone::Taillight_RR, WorldImpactNormal, ImpactSpeedKmh);
+			}
+		}
+
+		if (Rear >= 0.52f)
+		{
+			BreakCornerLight(-1, EWSPC2GlassZone::RearWindow, WorldImpactNormal, ImpactSpeedKmh);
+		}
+	}
+
+	// Side doors, mirrors & side glass
+	if (Zone == EWSPC2DamageZone::Left || Left >= 0.18f)
+	{
+		if (Left >= 0.12f || Severity >= 0.26f) PromotePanel(EWSPC2DetachablePanel::LeftMirror, EWSPC2PanelDamageState::Detached);
+		if (Left >= 0.72f) PromotePanel(EWSPC2DetachablePanel::LeftDoor, EWSPC2PanelDamageState::Detached);
+		else if (Left >= 0.32f) PromotePanel(EWSPC2DetachablePanel::LeftDoor, EWSPC2PanelDamageState::Loose);
+		if (Left >= 0.36f) BreakCornerLight(-1, EWSPC2GlassZone::SideWindow_L, WorldImpactNormal, ImpactSpeedKmh);
+	}
+	if (Zone == EWSPC2DamageZone::Right || Right >= 0.18f)
+	{
+		if (Right >= 0.12f || Severity >= 0.26f) PromotePanel(EWSPC2DetachablePanel::RightMirror, EWSPC2PanelDamageState::Detached);
+		if (Right >= 0.72f) PromotePanel(EWSPC2DetachablePanel::RightDoor, EWSPC2PanelDamageState::Detached);
+		else if (Right >= 0.32f) PromotePanel(EWSPC2DetachablePanel::RightDoor, EWSPC2PanelDamageState::Loose);
+		if (Right >= 0.36f) BreakCornerLight(-1, EWSPC2GlassZone::SideWindow_R, WorldImpactNormal, ImpactSpeedKmh);
+	}
+
+	// Roof / Rollover lightbar & windshield shatter
+	if (Zone == EWSPC2DamageZone::Roof || Roof >= 0.20f || bIsWrecked)
+	{
+		if (Roof >= 0.42f || bIsWrecked)
+		{
+			PromotePanel(EWSPC2DetachablePanel::RoofLightbar, EWSPC2PanelDamageState::Detached);
+			BreakCornerLight(4, EWSPC2GlassZone::Lightbar_Glass, WorldImpactNormal, ImpactSpeedKmh);
+		}
+		else if (Roof >= 0.18f)
+		{
+			PromotePanel(EWSPC2DetachablePanel::RoofLightbar, EWSPC2PanelDamageState::Loose);
+		}
+		if (Roof >= 0.45f)
+		{
+			BreakCornerLight(-1, EWSPC2GlassZone::Windshield, WorldImpactNormal, ImpactSpeedKmh);
+		}
+	}
+}
+
+void UWSPC2VehicleDamageComponent::UpdateDynamicCornerLights(float DeltaTime)
+{
+	AActor* Owner = GetOwner();
+	const APawn* Pawn = Cast<APawn>(Owner);
+	const bool bShowLights = IsValid(Pawn) && Pawn->IsPlayerControlled() && !bIsWrecked;
+
+	auto EvalCorner = [&](int32 Idx, ULightComponent* Comp, float NominalIntensity)
+	{
+		if (!Comp)
+		{
+			return;
+		}
+		const bool bBroken = (BrokenLightsMask & static_cast<uint8>(1u << Idx)) != 0;
+		if (!bShowLights)
+		{
+			Comp->SetVisibility(false);
+			return;
+		}
+		if (!bBroken)
+		{
+			Comp->SetVisibility(true);
+			Comp->SetIntensity(NominalIntensity);
+			return;
+		}
+		if (LightFlickerTimer[Idx] > 0.0f)
+		{
+			LightFlickerTimer[Idx] = FMath::Max(0.0f, LightFlickerTimer[Idx] - DeltaTime);
+			const bool bFlash = FMath::Sin(HazardFlickerPhase * 2.4f + Idx * 1.7f) > 0.25f;
+			Comp->SetVisibility(bFlash);
+			Comp->SetIntensity(bFlash ? NominalIntensity * 0.75f : 0.0f);
+		}
+		else
+		{
+			Comp->SetVisibility(false);
+		}
+	};
+
+	if (HeadlightSpots.IsValidIndex(0)) EvalCorner(0, HeadlightSpots[0], 26000.0f);
+	if (HeadlightSpots.IsValidIndex(1)) EvalCorner(1, HeadlightSpots[1], 26000.0f);
+	if (TaillightGlows.IsValidIndex(0)) EvalCorner(2, TaillightGlows[0], 5500.0f);
+	if (TaillightGlows.IsValidIndex(1)) EvalCorner(3, TaillightGlows[1], 5500.0f);
+}
+
+int32 UWSPC2VehicleDamageComponent::GetLoosePanelCount() const
+{
+	int32 C = 0;
+	for (int32 i = 0; i < 9; ++i)
+	{
+		if (PanelStates[i] == static_cast<uint8>(EWSPC2PanelDamageState::Loose)) ++C;
+	}
+	return C;
+}
+
+int32 UWSPC2VehicleDamageComponent::GetDetachedPanelCount() const
+{
+	int32 C = 0;
+	for (int32 i = 0; i < 9; ++i)
+	{
+		if (PanelStates[i] == static_cast<uint8>(EWSPC2PanelDamageState::Detached)) ++C;
+	}
+	return C;
+}
+
+int32 UWSPC2VehicleDamageComponent::GetBrokenLightCount() const
+{
+	int32 C = 0;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		if ((BrokenLightsMask & static_cast<uint8>(1u << i)) != 0) ++C;
+	}
+	return C;
+}
+
+int32 UWSPC2VehicleDamageComponent::GetShatteredGlassCount() const
+{
+	int32 C = 0;
+	for (int32 i = 0; i < 9; ++i)
+	{
+		if ((ShatteredGlassMask & static_cast<uint8>(1u << i)) != 0) ++C;
+	}
+	return C;
+}
+
 void UWSPC2VehicleDamageComponent::RecalculateWheelCamberAndFlags()
 {
 	for (int32 w = 0; w < 4; ++w)
@@ -724,15 +1628,44 @@ void UWSPC2VehicleDamageComponent::RecalculateWheelCamberAndFlags()
 
 		const bool bRightSide = (w % 2) == 1;
 		const float Sign = bRightSide ? -1.0f : 1.0f;
+		const float Bent = FMath::Clamp(WheelBentAmount[w], 0.0f, 1.0f);
 		if (bWheelPunctured[w])
 		{
-			WheelCamberTiltDeg[w] = Sign * 8.5f;
+			WheelCamberTiltDeg[w] = Sign * (8.5f + Bent * 9.5f);
+			WheelToeTiltDeg[w] = Sign * (2.5f + Bent * 8.5f);
 		}
 		else
 		{
-			const float HubWear = FMath::Clamp(1.0f - WheelHealth[w], 0.0f, 1.0f);
-			WheelCamberTiltDeg[w] = (HubWear > 0.25f) ? Sign * FMath::Lerp(0.0f, 4.2f, (HubWear - 0.25f) / 0.75f) : 0.0f;
+			const float HubWear = FMath::Max(Bent, FMath::Clamp(1.0f - WheelHealth[w], 0.0f, 1.0f));
+			WheelCamberTiltDeg[w] = (HubWear > 0.18f) ? Sign * FMath::Lerp(0.0f, 12.0f, (HubWear - 0.18f) / 0.82f) : 0.0f;
+			WheelToeTiltDeg[w] = (Bent > 0.10f) ? Sign * (Bent * 9.0f) : 0.0f;
 		}
+	}
+}
+
+int32 UWSPC2VehicleDamageComponent::GetDetachedWheelCount() const
+{
+	int32 Count = 0;
+	for (int32 w = 0; w < 4; ++w)
+	{
+		if (IsWheelDetached(w))
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+const TCHAR* UWSPC2VehicleDamageComponent::GetDisableReasonName() const
+{
+	switch (DisableReason)
+	{
+	case EWSPC2VehicleDisableReason::None:               return TEXT("None");
+	case EWSPC2VehicleDisableReason::HealthDepleted:     return TEXT("HealthDepleted");
+	case EWSPC2VehicleDisableReason::EngineBlockCrushed: return TEXT("EngineBlockCrushed");
+	case EWSPC2VehicleDisableReason::TwoWheelsLost:      return TEXT("TwoWheelsLost");
+	case EWSPC2VehicleDisableReason::ChassisTwisted:     return TEXT("ChassisTwisted");
+	default:                                             return TEXT("Unknown");
 	}
 }
 
@@ -789,6 +1722,12 @@ float UWSPC2VehicleDamageComponent::GetWheelVisualDropCm(int32 WheelIndex) const
 	{
 		return 0.0f;
 	}
+	if (IsWheelDetached(WheelIndex))
+	{
+		const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
+		const float HubR = Tuning ? Tuning->DamageDetachedHubRadiusCm : 11.0f;
+		return FMath::Max(0.0f, WheelBaseRadii[WheelIndex] - HubR);
+	}
 	if (bWheelPunctured[WheelIndex])
 	{
 		const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
@@ -810,9 +1749,10 @@ float UWSPC2VehicleDamageComponent::GetEngineHealthTorqueFactor() const
 	const float FrontDamage = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)];
 	const float RearDamage = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Rear)];
 	const float OverallDamage = FMath::Clamp((100.0f - HealthPercent) * 0.01f, 0.0f, 1.0f);
+	const float IntrusionFrac = FMath::Clamp(EngineBlockIntrusionPct / FMath::Max(Tuning ? Tuning->DamageEngineIntrusionDisablePct : 30.0f, 1.0f), 0.0f, 1.0f);
 
-	// Light front bumps shave off a touch of response; radiator & drivetrain crush sap heavy torque
-	const float EngineWear = FMath::Clamp(FrontDamage * 0.78f + RearDamage * 0.14f + OverallDamage * 0.28f, 0.0f, 1.0f);
+	// Light front bumps shave off a touch of response; engine intrusion toward 30% saps severe power
+	const float EngineWear = FMath::Clamp(FMath::Max(FrontDamage * 0.78f + RearDamage * 0.14f + OverallDamage * 0.28f, IntrusionFrac * 0.92f), 0.0f, 1.0f);
 	if (EngineWear <= 0.08f)
 	{
 		return 1.0f;
@@ -890,39 +1830,38 @@ void UWSPC2VehicleDamageComponent::ApplyVisualDeformation()
 		return;
 	}
 
-	// Crumple silhouette plus subtle broken-suspension sag toward punctured wheels
-	const float LeftSag = (bWheelPunctured[0] ? 1.8f : 0.0f) + (bWheelPunctured[2] ? 1.8f : 0.0f);
-	const float RightSag = (bWheelPunctured[1] ? 1.8f : 0.0f) + (bWheelPunctured[3] ? 1.8f : 0.0f);
-	const float FrontSag = (bWheelPunctured[0] ? 1.6f : 0.0f) + (bWheelPunctured[1] ? 1.6f : 0.0f);
-	const float RearSag = (bWheelPunctured[2] ? 1.6f : 0.0f) + (bWheelPunctured[3] ? 1.6f : 0.0f);
+	const float TwistFloorFrac = FMath::Clamp(GetMaxChassisTwistDeg() / FMath::Max(FloorTouchTwistDeg, 1.0f), 0.0f, 1.25f);
+	const float LeftSag = (bWheelPunctured[0] ? 1.8f : 0.0f) + (bWheelPunctured[2] ? 1.8f : 0.0f) + (IsWheelDetached(0) ? 5.5f : 0.0f) + (IsWheelDetached(2) ? 5.5f : 0.0f);
+	const float RightSag = (bWheelPunctured[1] ? 1.8f : 0.0f) + (bWheelPunctured[3] ? 1.8f : 0.0f) + (IsWheelDetached(1) ? 5.5f : 0.0f) + (IsWheelDetached(3) ? 5.5f : 0.0f);
+	const float FrontSag = (bWheelPunctured[0] ? 1.6f : 0.0f) + (bWheelPunctured[1] ? 1.6f : 0.0f) + (IsWheelDetached(0) ? 5.5f : 0.0f) + (IsWheelDetached(1) ? 5.5f : 0.0f);
+	const float RearSag = (bWheelPunctured[2] ? 1.6f : 0.0f) + (bWheelPunctured[3] ? 1.6f : 0.0f) + (IsWheelDetached(2) ? 5.5f : 0.0f) + (IsWheelDetached(3) ? 5.5f : 0.0f);
 
 	const FVector CrushScale(
-		1.0f - 0.050f * (Front + Rear),
-		1.0f - 0.038f * (Left + Right),
-		1.0f - 0.058f * Roof);
+		1.0f - 0.055f * (Front + Rear) - 0.045f * FMath::Clamp(EngineBlockIntrusionPct / 30.0f, 0.0f, 1.2f),
+		1.0f - 0.042f * (Left + Right),
+		1.0f - 0.062f * Roof - 0.035f * TwistFloorFrac);
 
 	const FVector CrushShift(
 		(Rear - Front) * 6.5f,
 		(Left - Right) * 3.5f,
-		-Roof * 4.8f - 0.5f * (LeftSag + RightSag));
+		-Roof * 4.8f - 0.5f * (LeftSag + RightSag) - TwistFloorFrac * 4.5f);
 
 	const FRotator CrushTilt(
-		(Rear - Front) * 1.9f + (RearSag - FrontSag) * 0.65f,
-		(Left - Right) * 1.1f,
-		(Right - Left) * 2.8f + (LeftSag - RightSag) * 0.95f);
+		(Rear - Front) * 1.9f + (RearSag - FrontSag) * 0.65f + ChassisTwistDeg.Y * 0.85f,
+		ChassisTwistDeg.Z * 0.85f + (Left - Right) * 1.1f,
+		ChassisTwistDeg.X * 0.85f + (Right - Left) * 2.8f + (LeftSag - RightSag) * 0.95f);
 
 	FTransform DeformedBody = InitialBodyRelativeTransform;
-	DeformedBody.SetScale3D(InitialBodyRelativeTransform.GetScale3D() * CrushScale);
-	DeformedBody.AddToTranslation(CrushShift);
-	DeformedBody.SetRotation(InitialBodyRelativeTransform.GetRotation() * CrushTilt.Quaternion());
-	BodyMesh->SetRelativeTransform(DeformedBody);
-
-	for (int32 z = 0; z < 5; ++z)
+	const bool bHasDeformMesh = DeformableChassis && DeformableChassis->IsActive();
+	if (!bHasDeformMesh)
 	{
-		BodyMesh->SetCustomPrimitiveDataFloat(z, ZoneDamage[z]);
+		DeformedBody.SetScale3D(InitialBodyRelativeTransform.GetScale3D() * CrushScale);
+		DeformedBody.AddToTranslation(CrushShift);
+		DeformedBody.SetRotation(InitialBodyRelativeTransform.GetRotation() * CrushTilt.Quaternion());
+		BodyMesh->SetRelativeTransform(DeformedBody);
 	}
 
-	if (GlassMesh)
+	if (GlassMesh && !bHasDeformMesh)
 	{
 		FTransform DeformedGlass = InitialGlassRelativeTransform;
 		DeformedGlass.SetScale3D(InitialGlassRelativeTransform.GetScale3D() * CrushScale);
@@ -931,13 +1870,9 @@ void UWSPC2VehicleDamageComponent::ApplyVisualDeformation()
 		GlassMesh->SetRelativeTransform(DeformedGlass);
 	}
 
-	const float Clearcoat = FMath::Lerp(0.75f, 0.10f, TotalSeverity);
-	const float DirtAmt = FMath::Lerp(0.88f, 3.60f, TotalSeverity);
-	const float SplatterAmt = FMath::Lerp(1.00f, 3.90f, TotalSeverity);
-	const float DustAmt = FMath::Lerp(0.20f, 1.95f, TotalSeverity);
-	const float BulletNormal = FMath::Lerp(3.78f, 9.80f, TotalSeverity);
-	const FLinearColor DentParams(0.50f, FMath::Lerp(0.20f, 0.46f, TotalSeverity), CurrentDentStrength, 0.66f);
-	const FLinearColor DentOffset((Front - Rear) * 0.25f, (Right - Left) * 0.25f, 0.0f, 1.0f);
+	const float SootLevel = FMath::Clamp(TotalSeverity * 0.7f + (EngineBlockIntrusionPct / 35.0f) * 0.45f, 0.0f, 1.0f);
+	static const FName HitPosNames[4] = { TEXT("HitPos0"), TEXT("HitPos1"), TEXT("HitPos2"), TEXT("HitPos3") };
+	static const FName HitDirNames[4] = { TEXT("HitDir0"), TEXT("HitDir1"), TEXT("HitDir2"), TEXT("HitDir3") };
 
 	for (UMaterialInstanceDynamic* MID : BodyMIDs)
 	{
@@ -946,21 +1881,34 @@ void UWSPC2VehicleDamageComponent::ApplyVisualDeformation()
 			continue;
 		}
 
-		// Real CitySampleVehicles M_Veh_CarPaint / M_Veh_Opaque / VehicleImperfection parameters
-		MID->SetScalarParameterValue(TEXT("Primer Threshold PI"), CurrentPrimerThreshold);
-		MID->SetScalarParameterValue(TEXT("Metal Threshold PI"), CurrentMetalThreshold);
-		MID->SetScalarParameterValue(TEXT("Dirt Amt PI"), DirtAmt);
-		MID->SetScalarParameterValue(TEXT("DirtSplatter Amt PI"), SplatterAmt);
-		MID->SetScalarParameterValue(TEXT("Dust Amt PI"), DustAmt);
-		MID->SetScalarParameterValue(TEXT("ClearcoatIntensity"), Clearcoat);
-		MID->SetScalarParameterValue(TEXT("BulletImpactNormalStrength"), BulletNormal);
-		MID->SetVectorParameterValue(TEXT("Dent Params"), DentParams);
-		MID->SetVectorParameterValue(TEXT("Dent Mask Offset"), DentOffset);
+		// Only M_WSPC2_VehicleDamage carries localized impact wear; never mutate global CitySample Paint/Dirt/CPD across untouched panels
+		const UMaterial* BaseMat = MID->GetMaterial();
+		if (!BaseMat || !BaseMat->GetName().Contains(TEXT("M_WSPC2_VehicleDamage")))
+		{
+			continue;
+		}
 
-		// Fallback names for generic materials
-		MID->SetScalarParameterValue(TEXT("Damage"), TotalSeverity);
-		MID->SetScalarParameterValue(TEXT("Dirt"), TotalSeverity * 0.65f);
-		MID->SetScalarParameterValue(TEXT("Roughness"), FMath::Lerp(0.22f, 0.68f, TotalSeverity));
+		if (bHasDeformMesh)
+		{
+			// CPU-deformed meshes drive strictly localized scratches/primer/steel/soot via VertexColor in contact area
+			MID->SetScalarParameterValue(TEXT("UseWPO"), 0.0f);
+			MID->SetScalarParameterValue(TEXT("DamageAmount"), TotalSeverity);
+			MID->SetScalarParameterValue(TEXT("ScratchAmount"), 0.0f);
+			MID->SetScalarParameterValue(TEXT("SootAmount"), 0.0f);
+		}
+		else
+		{
+			MID->SetScalarParameterValue(TEXT("UseWPO"), 1.0f);
+			for (int32 s = 0; s < 4; ++s)
+			{
+				const FWSPC2ImpactDeformSlot& Slot = DeformSlots[s];
+				MID->SetVectorParameterValue(HitPosNames[s], FLinearColor(Slot.LocalPos.X, Slot.LocalPos.Y, Slot.LocalPos.Z, FMath::Max(1.0f, Slot.RadiusCm)));
+				MID->SetVectorParameterValue(HitDirNames[s], FLinearColor(Slot.InwardDir.X, Slot.InwardDir.Y, Slot.InwardDir.Z, Slot.DepthCm));
+			}
+			MID->SetScalarParameterValue(TEXT("DamageAmount"), TotalSeverity);
+			MID->SetScalarParameterValue(TEXT("ScratchAmount"), FMath::Clamp(TotalSeverity * 1.15f + MaxZoneDmg * 0.35f, 0.0f, 1.0f));
+			MID->SetScalarParameterValue(TEXT("SootAmount"), SootLevel);
+		}
 	}
 }
 
@@ -1011,60 +1959,98 @@ void UWSPC2VehicleDamageComponent::UpdateGlassFractureMaterials()
 			bLightbarFractured = true;
 		}
 	}
-	else if (GenericGlassFractured)
+	else
 	{
-		const int32 NumMats = GlassMesh->GetNumMaterials();
-		const TArray<FName> SlotNames = GlassMesh->GetMaterialSlotNames();
-
-		if (GlassCrackStage < 1 && (GlassStrain >= 0.20f || bIsWrecked))
+		// Procedural M_WSPC2_VehicleGlass crack stage
+		const float NormalizedCrack = bIsWrecked ? 1.0f : FMath::Clamp((GlassStrain - 0.12f) / 0.65f, 0.0f, 1.0f);
+		for (UMaterialInstanceDynamic* GMID : GlassMIDs)
 		{
-			bool bMatchedWindshield = false;
-			for (int32 Slot = 0; Slot < NumMats; ++Slot)
+			if (GMID)
 			{
-				const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
-				const FString MatStr = OriginalGlassMaterials.IsValidIndex(Slot) && OriginalGlassMaterials[Slot] ? OriginalGlassMaterials[Slot]->GetName() : FString();
-				if (SlotStr.Contains(TEXT("windshield"), ESearchCase::IgnoreCase)
-					|| MatStr.Contains(TEXT("windshield"), ESearchCase::IgnoreCase)
-					|| MatStr.Contains(TEXT("_19")))
-				{
-					GlassMesh->SetMaterial(Slot, GenericGlassFractured);
-					bMatchedWindshield = true;
-				}
+				GMID->SetScalarParameterValue(TEXT("CrackStage"), NormalizedCrack);
 			}
-			if (!bMatchedWindshield)
+		}
+
+		// Legacy CitySample non-police glass fracture swap fallback (skip if slot already uses M_WSPC2_VehicleGlass)
+		if (GenericGlassFractured)
+		{
+			const int32 NumMats = GlassMesh->GetNumMaterials();
+			const TArray<FName> SlotNames = GlassMesh->GetMaterialSlotNames();
+			auto ShouldSwapSlot = [this](int32 Slot) -> bool
+			{
+				if (!OriginalGlassMaterials.IsValidIndex(Slot) || !OriginalGlassMaterials[Slot])
+				{
+					return false;
+				}
+				const FString ParentName = OriginalGlassMaterials[Slot]->GetMaterial() ? OriginalGlassMaterials[Slot]->GetMaterial()->GetName() : OriginalGlassMaterials[Slot]->GetName();
+				return !ParentName.Contains(TEXT("M_WSPC2_VehicleGlass"), ESearchCase::IgnoreCase);
+			};
+
+			if (GlassCrackStage < 1 && (GlassStrain >= 0.20f || bIsWrecked))
+			{
+				bool bMatchedWindshield = false;
+				for (int32 Slot = 0; Slot < NumMats; ++Slot)
+				{
+					if (!ShouldSwapSlot(Slot)) continue;
+					const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
+					const FString MatStr = OriginalGlassMaterials[Slot]->GetName();
+					if (SlotStr.Contains(TEXT("windshield"), ESearchCase::IgnoreCase)
+						|| MatStr.Contains(TEXT("windshield"), ESearchCase::IgnoreCase)
+						|| MatStr.Contains(TEXT("_19")))
+					{
+						GlassMesh->SetMaterial(Slot, GenericGlassFractured);
+						bMatchedWindshield = true;
+					}
+				}
+				if (!bMatchedWindshield)
+				{
+					for (int32 Slot = 0; Slot < NumMats; ++Slot)
+					{
+						if (!ShouldSwapSlot(Slot)) continue;
+						const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
+						const FString MatStr = OriginalGlassMaterials[Slot]->GetName();
+						if (SlotStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
+							|| SlotStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
+							|| MatStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
+							|| MatStr.Contains(TEXT("window"), ESearchCase::IgnoreCase))
+						{
+							GlassMesh->SetMaterial(Slot, GenericGlassFractured);
+						}
+					}
+				}
+				GlassCrackStage = 1;
+			}
+
+			if (!bSideGlassFractured && (Side >= 0.42f || Roof >= 0.45f || bIsWrecked))
 			{
 				for (int32 Slot = 0; Slot < NumMats; ++Slot)
 				{
+					if (!ShouldSwapSlot(Slot)) continue;
 					const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
-					const FString MatStr = OriginalGlassMaterials.IsValidIndex(Slot) && OriginalGlassMaterials[Slot] ? OriginalGlassMaterials[Slot]->GetName() : FString();
-					if (SlotStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
-						|| SlotStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
-						|| MatStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
-						|| MatStr.Contains(TEXT("window"), ESearchCase::IgnoreCase))
+					const FString MatStr = OriginalGlassMaterials[Slot]->GetName();
+					if (SlotStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
+						|| SlotStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
+						|| MatStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
+						|| MatStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase))
 					{
 						GlassMesh->SetMaterial(Slot, GenericGlassFractured);
 					}
 				}
+				bSideGlassFractured = true;
+				GlassCrackStage = FMath::Max(GlassCrackStage, 2);
 			}
-			GlassCrackStage = 1;
 		}
-
-		if (!bSideGlassFractured && (Side >= 0.42f || Roof >= 0.45f || bIsWrecked))
+		else
 		{
-			for (int32 Slot = 0; Slot < NumMats; ++Slot)
+			if (GlassCrackStage < 1 && (GlassStrain >= 0.20f || bIsWrecked))
 			{
-				const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
-				const FString MatStr = OriginalGlassMaterials.IsValidIndex(Slot) && OriginalGlassMaterials[Slot] ? OriginalGlassMaterials[Slot]->GetName() : FString();
-				if (SlotStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
-					|| SlotStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase)
-					|| MatStr.Contains(TEXT("window"), ESearchCase::IgnoreCase)
-					|| MatStr.Contains(TEXT("glass"), ESearchCase::IgnoreCase))
-				{
-					GlassMesh->SetMaterial(Slot, GenericGlassFractured);
-				}
+				GlassCrackStage = 1;
 			}
-			bSideGlassFractured = true;
-			GlassCrackStage = FMath::Max(GlassCrackStage, 2);
+			if (!bSideGlassFractured && (Side >= 0.42f || Roof >= 0.45f || bIsWrecked))
+			{
+				bSideGlassFractured = true;
+				GlassCrackStage = FMath::Max(GlassCrackStage, 2);
+			}
 		}
 	}
 }
@@ -1078,38 +2064,11 @@ void UWSPC2VehicleDamageComponent::UpdateLightMaterials()
 
 	const float Front = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Front)];
 	const float Rear = ZoneDamage[static_cast<int32>(EWSPC2DamageZone::Rear)];
-	const float HeadlightHealth = bIsWrecked ? 0.0f : FMath::Clamp(1.0f - (Front - 0.18f) / 0.62f, 0.0f, 1.0f);
-	const float TaillightHealth = bIsWrecked ? 0.0f : FMath::Clamp(1.0f - (Rear - 0.22f) / 0.65f, 0.0f, 1.0f);
+	const bool bFrontLightsDead = (BrokenLightsMask & 0x03) == 0x03;
+	const bool bRearLightsDead = (BrokenLightsMask & 0x0C) == 0x0C;
+	const float HeadlightHealth = (bIsWrecked || bFrontLightsDead) ? 0.0f : FMath::Clamp(1.0f - (Front - 0.18f) / 0.62f, 0.0f, 1.0f);
+	const float TaillightHealth = (bIsWrecked || bRearLightsDead) ? 0.0f : FMath::Clamp(1.0f - (Rear - 0.22f) / 0.65f, 0.0f, 1.0f);
 
-	if (bIsPoliceCruiser)
-	{
-		// Slot 4 on SM_Body_NoFrontBrakes is 'veh_light' (MI_vehCar_vehicle13_3 / M_vehCar_vehicle13_3_Fractured)
-		const int32 LightSlot = 4;
-		if (BodyMesh->GetNumMaterials() > LightSlot)
-		{
-			if (!bHeadlightHousingFractured && (Front >= 0.65f || Rear >= 0.72f || bIsWrecked) && PoliceLightHousingFractured)
-			{
-				BodyMesh->SetMaterial(LightSlot, PoliceLightHousingFractured);
-				UMaterialInstanceDynamic* FracturedMID = BodyMesh->CreateDynamicMaterialInstance(LightSlot, PoliceLightHousingFractured);
-				if (BodyMIDs.IsValidIndex(LightSlot))
-				{
-					BodyMIDs[LightSlot] = FracturedMID;
-				}
-				bHeadlightHousingFractured = true;
-			}
-
-			if (BodyMIDs.IsValidIndex(LightSlot) && BodyMIDs[LightSlot])
-			{
-				BodyMIDs[LightSlot]->SetScalarParameterValue(TEXT("Headlight Amt LE"), HeadlightHealth);
-				BodyMIDs[LightSlot]->SetScalarParameterValue(TEXT("Run Amt LE"), TaillightHealth);
-				BodyMIDs[LightSlot]->SetScalarParameterValue(TEXT("Brake Amt LE"), TaillightHealth);
-				BodyMIDs[LightSlot]->SetScalarParameterValue(TEXT("PoliceLight Amt"), CurrentSirenHealthFactor);
-			}
-		}
-		return;
-	}
-
-	// Generic support for all other CitySampleVehicles & imported vehicles: dim any body slot named *light*
 	const TArray<FName> SlotNames = BodyMesh->GetMaterialSlotNames();
 	for (int32 Slot = 0; Slot < BodyMIDs.Num(); ++Slot)
 	{
@@ -1119,7 +2078,37 @@ void UWSPC2VehicleDamageComponent::UpdateLightMaterials()
 		}
 		const FString SlotStr = SlotNames.IsValidIndex(Slot) ? SlotNames[Slot].ToString() : FString();
 		const FString MatStr = OriginalBodyMaterials.IsValidIndex(Slot) && OriginalBodyMaterials[Slot] ? OriginalBodyMaterials[Slot]->GetName() : FString();
-		if (SlotStr.Contains(TEXT("light"), ESearchCase::IgnoreCase) || MatStr.Contains(TEXT("light"), ESearchCase::IgnoreCase))
+		const bool bIsLightSlot = SlotStr.Contains(TEXT("light"), ESearchCase::IgnoreCase)
+			|| MatStr.Contains(TEXT("light"), ESearchCase::IgnoreCase)
+			|| SlotStr.Contains(TEXT("veh_light"), ESearchCase::IgnoreCase);
+		if (!bIsLightSlot)
+		{
+			continue;
+		}
+
+		if (bIsPoliceCruiser && !bHeadlightHousingFractured && SlotStr.Contains(TEXT("veh_light"), ESearchCase::IgnoreCase)
+			&& (Front >= 0.65f || Rear >= 0.72f || bIsWrecked) && PoliceLightHousingFractured)
+		{
+			BodyMesh->SetMaterial(Slot, PoliceLightHousingFractured);
+			UMaterialInstanceDynamic* FracturedMID = BodyMesh->CreateDynamicMaterialInstance(Slot, PoliceLightHousingFractured);
+			BodyMIDs[Slot] = FracturedMID;
+			bHeadlightHousingFractured = true;
+			if (DeformableChassis && DeformableChassis->IsActive())
+			{
+				for (const TWeakObjectPtr<UProceduralMeshComponent>& WeakPMC : DeformableChassis->GetActiveBodyPMCs())
+				{
+					if (UProceduralMeshComponent* PMC = WeakPMC.Get())
+					{
+						if (PMC->GetNumMaterials() > Slot)
+						{
+							PMC->SetMaterial(Slot, FracturedMID);
+						}
+					}
+				}
+			}
+		}
+
+		if (BodyMIDs[Slot])
 		{
 			BodyMIDs[Slot]->SetScalarParameterValue(TEXT("Headlight Amt LE"), HeadlightHealth);
 			BodyMIDs[Slot]->SetScalarParameterValue(TEXT("Run Amt LE"), TaillightHealth);
@@ -1211,13 +2200,15 @@ void UWSPC2VehicleDamageComponent::ApplyMechanicalPenalties()
 		VehMove->EngineSetup.MaxTorque = TargetTorque;
 		VehMove->SetMaxEngineTorque(TargetTorque);
 
-		// 2. Crushed bodywork and dragging blown rims add aerodynamic & rolling drag while reducing downforce
-		const float ExtraDrag = TotalSeverity * 0.42f + GetPuncturedWheelCount() * 0.06f + (bIsWrecked ? 0.35f : 0.0f);
+		// 2. Crushed bodywork, detached hubs, and floorpan ground contact add heavy drag while reducing downforce
+		const float FloorDrag = (GetMaxChassisTwistDeg() > FloorTouchTwistDeg) ? 0.95f : 0.0f;
+		const float ExtraDrag = TotalSeverity * 0.42f + GetPuncturedWheelCount() * 0.06f + GetDetachedWheelCount() * 0.22f + FloorDrag + (bIsWrecked ? 0.35f : 0.0f);
 		VehMove->SetDragCoefficient(BaseDragCoefficient + ExtraDrag);
 		const float AeroLoss = FMath::Clamp(1.0f - (Front * 0.35f + Rear * 0.25f + TotalSeverity * 0.15f), 0.45f, 1.0f);
 		VehMove->SetDownforceCoefficient(BaseDownforceCoefficient * AeroLoss);
 
 		// 3. Per-wheel radius, friction, slip grip, brake torque fade, steering travel limit, and ABS failures
+		const float DetachedHubR = Tuning ? Tuning->DamageDetachedHubRadiusCm : 11.0f;
 		const int32 NumWheels = FMath::Min(4, VehMove->WheelSetups.Num());
 		for (int32 w = 0; w < NumWheels; ++w)
 		{
@@ -1227,25 +2218,28 @@ void UWSPC2VehicleDamageComponent::ApplyMechanicalPenalties()
 			const float SideDmg = bRight ? Right : Left;
 			const float CornerDmg = FMath::Clamp(0.65f * EndDmg + 0.55f * SideDmg, 0.0f, 1.0f);
 			const float WheelDmg = FMath::Clamp(1.0f - WheelHealth[w], 0.0f, 1.0f);
+			const bool bDetached = IsWheelDetached(w);
 			const bool bFlat = bWheelPunctured[w];
 
-			const float RadiusDrop = bFlat ? FlatRadiusDrop : (WheelDmg * 1.2f);
-			VehMove->SetWheelRadius(w, FMath::Max(18.0f, WheelBaseRadii[w] - RadiusDrop));
+			const float TargetRadius = bDetached
+				? DetachedHubR
+				: FMath::Max(16.0f, WheelBaseRadii[w] - (bFlat ? FlatRadiusDrop : (WheelDmg * 1.2f)));
+			VehMove->SetWheelRadius(w, TargetRadius);
 
-			const float FricScale = bFlat ? FlatFrictionScale : FMath::Lerp(1.0f, 0.84f, WheelDmg);
+			const float FricScale = bDetached ? 0.18f : (bFlat ? FlatFrictionScale : FMath::Lerp(1.0f, 0.78f, FMath::Max(WheelDmg, WheelBentAmount[w])));
 			WheelFrictionScale[w] = FricScale;
 			VehMove->SetWheelFrictionMultiplier(w, WheelBaseFriction[w] * FricScale);
-			VehMove->SetWheelSlipGraphMultiplier(w, bFlat ? 0.70f : FMath::Lerp(1.0f, 0.88f, WheelDmg));
+			VehMove->SetWheelSlipGraphMultiplier(w, bDetached ? 0.35f : (bFlat ? 0.70f : FMath::Lerp(1.0f, 0.86f, WheelDmg)));
 
-			const float BrakeScale = bIsWrecked ? 0.35f : FMath::Clamp(1.0f - CornerDmg * 0.38f - (bFlat ? 0.25f : 0.0f), 0.35f, 1.0f);
+			const float BrakeScale = bDetached ? 0.0f : (bIsWrecked ? 0.35f : FMath::Clamp(1.0f - CornerDmg * 0.38f - (bFlat ? 0.25f : 0.0f), 0.35f, 1.0f));
 			VehMove->SetWheelMaxBrakeTorque(w, WheelBaseBrakeTorque[w] * BrakeScale);
 
 			if (bFront)
 			{
-				const float SteerScale = bIsWrecked ? 0.55f : FMath::Clamp(1.0f - CornerDmg * 0.22f - (bFlat ? 0.12f : 0.0f), 0.58f, 1.0f);
+				const float SteerScale = bDetached ? 0.10f : (bIsWrecked ? 0.55f : FMath::Clamp(1.0f - CornerDmg * 0.22f - WheelBentAmount[w] * 0.18f - (bFlat ? 0.12f : 0.0f), 0.45f, 1.0f));
 				VehMove->SetWheelMaxSteerAngle(w, WheelBaseSteerAngle[w] * SteerScale);
 
-				const bool bABSOk = WheelBaseABS[w] && !bIsWrecked && !bFlat && CornerDmg < 0.65f;
+				const bool bABSOk = WheelBaseABS[w] && !bIsWrecked && !bDetached && !bFlat && CornerDmg < 0.65f;
 				VehMove->SetABSEnabled(w, bABSOk);
 			}
 		}
@@ -1311,19 +2305,24 @@ void UWSPC2VehicleDamageComponent::SpawnImpactDebris(const FVector& WorldPoint, 
 		UStaticMeshComponent* MeshComp = Shard->GetStaticMeshComponent();
 		Shard->SetMobility(EComponentMobility::Movable);
 		MeshComp->SetStaticMesh(DebrisCubeMesh);
+		// Flat jagged sheet-metal / glass plate scraps rather than chunky cubes
 		MeshComp->SetWorldScale3D(FVector(
-			FMath::FRandRange(0.08f, 0.24f),
-			FMath::FRandRange(0.05f, 0.16f),
-			FMath::FRandRange(0.02f, 0.06f)));
+			FMath::FRandRange(0.14f, 0.30f),
+			FMath::FRandRange(0.08f, 0.22f),
+			FMath::FRandRange(0.012f, 0.026f)));
 		MeshComp->SetCollisionProfileName(TEXT("PhysicsActor"));
-		MeshComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-		MeshComp->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Ignore);
+		MeshComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+		MeshComp->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 		MeshComp->SetSimulatePhysics(true);
 		MeshComp->SetMassOverrideInKg(NAME_None, 2.5f, true);
 
-		if (GenericGlassFractured && (i % 2 == 0))
+		if (GenericGlassFractured && (i % 3 == 0))
 		{
 			MeshComp->SetMaterial(0, GenericGlassFractured);
+		}
+		else if (BodyMIDs.Num() > 0 && BodyMIDs[0])
+		{
+			MeshComp->SetMaterial(0, BodyMIDs[0]);
 		}
 
 		const FVector EjectDir = (WorldNormal + FVector(FMath::FRandRange(-0.45f, 0.45f), FMath::FRandRange(-0.45f, 0.45f), 0.65f)).GetSafeNormal();
@@ -1350,4 +2349,87 @@ bool UWSPC2VehicleDamageComponent::IsHoodSmokeActive() const
 bool UWSPC2VehicleDamageComponent::IsRimSparkActive() const
 {
 	return IsValid(RimSparkComp) && RimSparkComp->IsActive();
+}
+
+void UWSPC2VehicleDamageComponent::ClearContactDamageDecals()
+{
+	if (!IsEngineExitRequested() && !GExitPurge)
+	{
+		for (const TWeakObjectPtr<UDecalComponent>& WeakDecal : ContactDamageDecals)
+		{
+			UDecalComponent* Decal = WeakDecal.Get();
+			if (IsValid(Decal) && !Decal->IsUnreachable())
+			{
+				Decal->DestroyComponent();
+			}
+		}
+	}
+	ContactDamageDecals.Reset();
+}
+
+void UWSPC2VehicleDamageComponent::SpawnLocalizedContactDecal(const FVector& LocalHit, const FVector& InwardDir, float Severity)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || GetNetMode() == NM_DedicatedServer || !LocalizedDamageDecalMat || Severity < 0.12f)
+	{
+		return;
+	}
+	if (!DeformableChassis || !DeformableChassis->IsActive() || DeformableChassis->UsesWSPC2DamageMaterial())
+	{
+		return;
+	}
+
+	USceneComponent* AttachParent = (BodyMesh && BodyMesh->GetAttachParent()) ? BodyMesh->GetAttachParent() : Owner->GetRootComponent();
+	if (!AttachParent)
+	{
+		return;
+	}
+
+	while (ContactDamageDecals.Num() >= 10)
+	{
+		UDecalComponent* Oldest = ContactDamageDecals[0].Get();
+		if (IsValid(Oldest) && !Oldest->IsUnreachable())
+		{
+			Oldest->DestroyComponent();
+		}
+		ContactDamageDecals.RemoveAt(0);
+	}
+
+	UDecalComponent* Decal = NewObject<UDecalComponent>(Owner, NAME_None);
+	if (!Decal)
+	{
+		return;
+	}
+
+	const FVector SafeInward = InwardDir.IsNearlyZero() ? FVector(-1.0f, 0.0f, 0.0f) : InwardDir.GetSafeNormal();
+	const FTransform ParentXf = AttachParent->GetComponentTransform();
+	const FTransform ActorXf = Owner->GetActorTransform();
+	const FVector WorldPos = ActorXf.TransformPosition(LocalHit - SafeInward * 2.5f);
+	const FVector WorldInward = ActorXf.TransformVectorNoScale(SafeInward).GetSafeNormal();
+	const float RollDeg = FMath::FRandRange(-18.0f, 18.0f);
+	const FQuat WorldRot = FQuat(WorldInward.Rotation()) * FQuat(FVector(1.0f, 0.0f, 0.0f), FMath::DegreesToRadians(RollDeg));
+
+	Decal->SetupAttachment(AttachParent);
+	Decal->SetRelativeTransform(FTransform(WorldRot, WorldPos).GetRelativeTransform(ParentXf));
+	Decal->DecalSize = FVector(
+		18.0f,
+		FMath::Clamp(22.0f + Severity * 20.0f, 20.0f, 42.0f),
+		FMath::Clamp(16.0f + Severity * 16.0f, 16.0f, 32.0f));
+	Decal->FadeScreenSize = 0.0005f;
+
+	UMaterialInstanceDynamic* DecalMID = UMaterialInstanceDynamic::Create(LocalizedDamageDecalMat, Decal);
+	if (DecalMID)
+	{
+		DecalMID->SetScalarParameterValue(TEXT("DecalIntensity"), FMath::Clamp(0.45f + Severity * 0.55f, 0.40f, 0.96f));
+		DecalMID->SetScalarParameterValue(TEXT("SeedOffset"), FMath::FRandRange(0.0f, 19.0f));
+		DecalMID->SetScalarParameterValue(TEXT("SootBias"), FMath::Clamp(Severity * 0.60f, 0.15f, 0.70f));
+		Decal->SetDecalMaterial(DecalMID);
+	}
+	else
+	{
+		Decal->SetDecalMaterial(LocalizedDamageDecalMat);
+	}
+
+	Decal->RegisterComponent();
+	ContactDamageDecals.Add(Decal);
 }

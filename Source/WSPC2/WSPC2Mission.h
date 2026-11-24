@@ -143,6 +143,8 @@ public:
 
 	/** Between cones: aims close ahead and takes the bends gently */
 	void SetTight(bool bInTight) { bTight = bInTight; }
+	/** Slows or stops cleanly when another vehicle occupies the lane ahead. */
+	void SetAvoidTrafficAhead(bool bEnable) { bAvoidTrafficAhead = bEnable; }
 	bool IsFinished() const { return bFinished; }
 	bool IsDriving() const { return Route.Num() > 1 && !bFinished; }
 	float GetProgress() const;
@@ -164,6 +166,7 @@ private:
 	float HoldLeft = 0.0f;
 	bool bHandbrake = false;
 	bool bTight = false;
+	bool bAvoidTrafficAhead = false;
 	float DebugAge = 0.0f;
 };
 

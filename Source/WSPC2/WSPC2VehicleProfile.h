@@ -8,6 +8,28 @@
 #include "WSPC2VehicleProfile.generated.h"
 
 /**
+ * Driven wheel layout for Chaos simulation and drive-assist tuning.
+ */
+UENUM(BlueprintType)
+enum class EWSPC2Drivetrain : uint8
+{
+	RWD = 0,
+	FWD = 1,
+	AWD = 2
+};
+
+/**
+ * Engine bay placement used for the >30% engine block intrusion disable rule.
+ */
+UENUM(BlueprintType)
+enum class EWSPC2EngineLayout : uint8
+{
+	Front = 0,
+	Mid = 1,
+	Rear = 2
+};
+
+/**
  * How a vehicle's wheel meshes are authored and oriented relative to the car chassis.
  */
 UENUM(BlueprintType)
@@ -85,6 +107,14 @@ struct FWSPC2VehicleProfileSpec
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheels")
 	float DefaultWheelRadiusCm = 35.1f;
 
+	/** Optional staggered rear wheel radius (cm) when > 0; 0 reuses DefaultWheelRadiusCm. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheels")
+	float RearWheelRadiusCm = 0.0f;
+
+	/** True for tracked/armored military hulls whose tracks/wheels are baked into BodyMesh while Chaos simulates invisible corner hubs. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheels")
+	bool bBakedRunningGear = false;
+
 	/** When true, BodyCollision and CabinCollision are derived automatically from the loaded BodyMesh bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collision")
 	bool bAutoComputeCollisionFromBody = true;
@@ -146,6 +176,133 @@ struct FWSPC2VehicleProfileSpec
 	/** Chaos chassis height (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Handling")
 	float ChassisHeightCm = 144.0f;
+
+	/** Optional metadata & authentic real-world powertrain/suspension overrides (loaded from Config/WSPC2Vehicles.json). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	FString RealWorldCounterpart;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	FString RoleGroup;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	FString AudioProfile = TEXT("V8_Cruiser");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	bool bUseRealWorldSpecs = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	EWSPC2Drivetrain Drivetrain = EWSPC2Drivetrain::RWD;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	EWSPC2EngineLayout EngineLayout = EWSPC2EngineLayout::Front;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld", meta = (Units = "kg"))
+	float RealMassKg = 1850.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float RealHorsepower = 235.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld", meta = (Units = "Nm"))
+	float RealMaxTorqueNm = 386.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float PeakTorqueRPM = 4000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float IdleRPM = 720.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float MaxRPM = 5750.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float ChangeUpRPM = 5200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float ChangeDownRPM = 1800.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	TArray<float> ForwardGearRatios;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float ReverseGearRatio = 2.95f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float FinalDriveRatio = 3.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float GearChangeTime = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float ConverterStallRatio = 1.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float DragCoefficient = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float DownforceCoefficient = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	FVector CenterOfMassOffset = FVector(10.0f, 0.0f, 48.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float FrontSpringRate = 225.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float RearSpringRate = 225.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float SuspensionDampingRatio = 0.54f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float SpringPreload = 50.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float SuspensionMaxRaise = 13.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float SuspensionMaxDrop = 14.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float FrontRollbarScaling = 0.30f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float RearRollbarScaling = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float FrontFriction = 2.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float RearFriction = 2.42f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float FrontBrakeTorque = 4200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float RearBrakeTorque = 2200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float HandbrakeTorque = 10000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	float MaxSteerAngle = 36.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RealWorld")
+	bool bABS = true;
+
+	/** Damage resistance multiplier (<1 stronger frame/armor, 1.0 standard street metal, -1 auto from police flag). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
+	float ArmorDamageScale = -1.0f;
+
+	/** Underbody ride clearance (cm) used to compute critical chassis twist degrees where floorpan hits ground. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (Units = "cm"))
+	float GroundClearanceCm = 17.5f;
+
+	/** Estimated local-space engine block AABB min/max (cm) for the >30% engine intrusion disable rule. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
+	FVector EngineBlockMinCm = FVector(105.0f, -42.0f, 30.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
+	FVector EngineBlockMaxCm = FVector(220.0f, 42.0f, 88.0f);
 };
 
 /**
@@ -169,6 +326,18 @@ public:
 
 	/** Returns the next loadable built-in PresetId after CurrentId, cycling smoothly over installed packs. */
 	static FName GetNextAvailableBuiltinPresetId(FName CurrentId);
+
+	/** Returns the previous loadable built-in PresetId before CurrentId. */
+	static FName GetPreviousAvailableBuiltinPresetId(FName CurrentId);
+
+	/** Returns the first loadable PresetId of the next vehicle role category (Builtin/Fleet_Playable/Fleet_Bonus/Military/Mission/Traffic). */
+	static FName GetNextCategoryPresetId(FName CurrentId);
+
+	/** Collects all loadable PresetIds belonging to a RoleGroup ("Fleet_Playable", "Fleet_Bonus", "Military", "Mission", "Traffic", or "Builtin"). */
+	static void GetPresetsByRoleGroup(const FString& RoleGroup, TArray<FName>& OutIds);
+
+	/** Returns normalized category name ("Builtin" when RoleGroup is empty). */
+	static FString GetNormalizedRoleGroup(const FWSPC2VehicleProfileSpec& Spec);
 
 	/** Returns true if the spec's primary body mesh exists and loads cleanly without warnings. */
 	static bool CanLoadPresetAssets(const FWSPC2VehicleProfileSpec& Spec);

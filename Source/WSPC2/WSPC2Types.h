@@ -11,3 +11,13 @@ enum class EWSPC2Seat : uint8
 	Driver,
 	Gunner
 };
+
+/** Multi-mode US police siren state (toggled/cycled cleanly via H / J). */
+UENUM(BlueprintType)
+enum class EWSPC2SirenMode : uint8
+{
+	Off = 0,
+	Wail = 1,
+	Yelp = 2,
+	Phaser = 3
+};

@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "sampleRate": 48000,
+  "loads": [
+    0.0,
+    0.45,
+    1.0
+  ],
+  "stabilizeSeconds": 0.75,
+  "captureSeconds": 2.2,
+  "startup": {
+    "crankSeconds": 0.55,
+    "catchSeconds": 1.45,
+    "settleSeconds": 4.5
+  },
+  "syntheticTags": {
+    "Tank_Turbine": "SyntheticTurbine",
+    "GolfCart_Electric": "SyntheticElectric"
+  },
+  "archetypes": [
+    {
+      "id": "arch_v8_efi_90s",
+      "displayName": "WSPC2 V8 5.7 EFI",
+      "preset": "Tools/audio/pipeline/presets/arch_v8_efi_90s.mr",
+      "entry": "wspc2_v8_efi_90s",
+      "basePreset": "atg-video-2/07_gm_ls.mr",
+      "audioProfiles": [
+        "V8_Cruiser",
+        "V8_Van"
+      ],
+      "vehicles": 6,
+      "idleRpm": 660,
+      "rpms": [
+        660,
+        910,
+        1240,
+        1690,
+        2310,
+        3150,
+        4300,
+        5860
+      ],
+      "redlineRpm": 6050,
+      "revLimitRpm": 6350
+    },
+    {
+      "id": "arch_v8_classic_70s",
+      "displayName": "WSPC2 V8 5.4 Carb Classic",
+      "preset": "Tools/audio/pipeline/presets/arch_v8_classic_70s.mr",
+      "entry": "wspc2_v8_classic_70s",
+      "basePreset": "chevrolet/chev_truck_454.mr",
+      "audioProfiles": [
+        "V8_Classic"
+      ],
+      "vehicles": 15,
+      "idleRpm": 650,
+      "rpms": [
+        650,
+        870,
+        1180,
+        1590,
+        2150,
+        2910,
+        3930,
+        5300
+      ],
+      "redlineRpm": 5450,
+      "revLimitRpm": 5750
+    },
+    {
+      "id": "arch_v8_muscle",
+      "displayName": "WSPC2 V8 7.2 Muscle",
+      "preset": "Tools/audio/pipeline/presets/arch_v8_muscle.mr",
+      "entry": "wspc2_v8_muscle",
+      "basePreset": "chevrolet/chev_truck_454.mr",
+      "audioProfiles": [
+        "V8_Muscle"
+      ],
+      "vehicles": 12,
+      "idleRpm": 680,
+      "rpms": [
+        680,
+        960,
+        1340,
+        1870,
+        2610,
+        3650,
+        5110,
+        7140
+      ],
+      "redlineRpm": 7300,
+      "revLimitRpm": 7600
+    },
+    {
+      "id": "arch_v6_american_90s",
+      "displayName": "WSPC2 V6 3.8 Even-fire",
+      "preset": "Tools/audio/pipeline/presets/arch_v6_american_90s.mr",
+      "entry": "wspc2_v6_american_90s",
+      "basePreset": "atg-video-2/06_even_fire_v6.mr",
+      "audioProfiles": [
+        "V6_Sedan"
+      ],
+      "vehicles": 13,
+      "idleRpm": 620,
+      "rpms": [
+        620,
+        870,
+        1230,
+        1740,
+        2450,
+        3460,
+        4880,
+        6880
+      ],
+      "redlineRpm": 7050,
+      "revLimitRpm": 7350
+    },
+    {
+      "id": "arch_v6_mid",
+      "displayName": "WSPC2 V6 3.0 Sport",
+      "preset": "Tools/audio/pipeline/presets/arch_v6_mid.mr",
+      "entry": "wspc2_v6_mid",
+      "basePreset": "atg-video-2/04_60_degree_v6.mr",
+      "audioProfiles": [
+        "V6_MidEngine"
+      ],
+      "vehicles": 3,
+      "idleRpm": 740,
+      "rpms": [
+        740,
+        1050,
+        1500,
+        2130,
+        3020,
+        4290,
+        6100,
+        8670
+      ],
+      "redlineRpm": 8850,
+      "revLimitRpm": 9150
+    },
+    {
+      "id": "arch_i4_econ",
+      "displayName": "WSPC2 I4 1.6 Compact",
+      "preset": "Tools/audio/pipeline/presets/arch_i4_econ.mr",
+      "entry": "wspc2_i4_econ",
+      "basePreset": "atg-video-1/05_honda_vtec.mr",
+      "audioProfiles": [
+        "I4_Compact"
+      ],
+      "vehicles": 14,
+      "idleRpm": 680,
+      "rpms": [
+        680,
+        980,
+        1410,
+        2030,
+        2920,
+        4200,
+        6030,
+        8670
+      ],
+      "redlineRpm": 8850,
+      "revLimitRpm": 9150
+    },
+    {
+      "id": "arch_boxer4_uel_turbo",
+      "displayName": "WSPC2 Boxer-4 2.0 UEL",
+      "preset": "Tools/audio/pipeline/presets/arch_boxer4_uel_turbo.mr",
+      "entry": "wspc2_boxer4_uel_turbo",
+      "basePreset": "atg-video-2/02_subaru_ej25_uh.mr",
+      "audioProfiles": [
+        "I4_Turbo_Rally"
+      ],
+      "vehicles": 4,
+      "idleRpm": 760,
+      "rpms": [
+        760,
+        1060,
+        1490,
+        2080,
+        2910,
+        4070,
+        5690,
+        7960
+      ],
+      "redlineRpm": 8150,
+      "revLimitRpm": 8450
+    },
+    {
+      "id": "arch_i6_twinturbo",
+      "displayName": "WSPC2 I6 3.0 Twin-Turbo",
+      "preset": "Tools/audio/pipeline/presets/arch_i6_twinturbo.mr",
+      "entry": "wspc2_i6_twinturbo",
+      "basePreset": "atg-video-2/03_2jz.mr",
+      "audioProfiles": [
+        "I6_TwinTurbo",
+        "Flat6_Turbo"
+      ],
+      "vehicles": 8,
+      "idleRpm": 680,
+      "rpms": [
+        680,
+        970,
+        1390,
+        1980,
+        2820,
+        4020,
+        5730,
+        8160
+      ],
+      "redlineRpm": 8350,
+      "revLimitRpm": 8650
+    },
+    {
+      "id": "arch_v12_exotic",
+      "displayName": "WSPC2 V12 5.7 Exotic",
+      "preset": "Tools/audio/pipeline/presets/arch_v12_exotic.mr",
+      "entry": "wspc2_v12_exotic",
+      "basePreset": "atg-video-2/12_ferrari_412_t2.mr",
+      "audioProfiles": [
+        "V12_Exotic",
+        "Flat12_Exotic"
+      ],
+      "vehicles": 3,
+      "idleRpm": 840,
+      "rpms": [
+        840,
+        1150,
+        1570,
+        2160,
+        2960,
+        4060,
+        5580,
+        7650
+      ],
+      "redlineRpm": 7800,
+      "revLimitRpm": 8100
+    },
+    {
+      "id": "arch_diesel_i4_truck",
+      "displayName": "WSPC2 I4 3.9 Diesel Truck",
+      "preset": "Tools/audio/pipeline/presets/arch_diesel_i4_truck.mr",
+      "entry": "wspc2_diesel_i4_truck",
+      "basePreset": "atg-video-1/05_honda_vtec.mr",
+      "audioProfiles": [
+        "I4_Diesel_Truck"
+      ],
+      "vehicles": 6,
+      "idleRpm": 620,
+      "rpms": [
+        620,
+        790,
+        1020,
+        1310,
+        1680,
+        2160,
+        2780,
+        3570
+      ],
+      "redlineRpm": 3750,
+      "revLimitRpm": 4050
+    },
+    {
+      "id": "arch_diesel_heavy",
+      "displayName": "WSPC2 V8 7.3 Diesel Heavy",
+      "preset": "Tools/audio/pipeline/presets/arch_diesel_heavy.mr",
+      "entry": "wspc2_diesel_heavy",
+      "basePreset": "atg-video-2/07_gm_ls.mr",
+      "audioProfiles": [
+        "V8_Diesel_Armored",
+        "APC_V6_Diesel"
+      ],
+      "vehicles": 2,
+      "idleRpm": 590,
+      "rpms": [
+        590,
+        750,
+        960,
+        1230,
+        1570,
+        2000,
+        2560,
+        3260
+      ],
+      "redlineRpm": 3450,
+      "revLimitRpm": 3750
+    }
+  ]
+}

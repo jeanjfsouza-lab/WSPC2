@@ -5,19 +5,20 @@
 #include "WSPC2PatrolWheels.h"
 #include "WSPC2VehicleTuning.h"
 #include "WSPC2VehicleDamageComponent.h"
+#include "WSPC2VehicleAudioComponent.h"
 #include "WSPC2CrewComponent.h"
 #include "WSPC2Gunnery.h"
 #include "WSPC2.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "ChaosVehicleWheel.h"
 #include "Components/BoxComponent.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkinnedAsset.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
-#include "PhysicsEngine/BodyInstance.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -151,9 +152,14 @@ void AWSPC2SportsCar::UpdateCrewAndWheel(float Delta)
 		}
 	}
 
-	// the steering wheel turns with the steering (as the front wheels do, a touch behind)
-	const float Input = GetChaosVehicleMovement() ? GetChaosVehicleMovement()->GetSteeringInput() : 0.0f;
-	DrawnSteering = FMath::FInterpTo(DrawnSteering, Input, Delta, 12.0f);
+	// the steering wheel turns with the actual front rack angle (reflecting turn-in slew & countersteer)
+	UChaosWheeledVehicleMovementComponent* Movement = GetChaosVehicleMovement();
+	float TargetSteerNorm = Movement ? Movement->GetSteeringInput() : 0.0f;
+	if (Movement && Movement->Wheels.IsValidIndex(0) && Movement->Wheels[0] && ActiveMaxSteerAngle > 1.0f)
+	{
+		TargetSteerNorm = FMath::Clamp(Movement->Wheels[0]->GetSteerAngle() / ActiveMaxSteerAngle, -1.0f, 1.0f);
+	}
+	DrawnSteering = FMath::FInterpTo(DrawnSteering, TargetSteerNorm, Delta, 16.0f);
 	const float WheelDeg = bForcedSteer ? ForcedSteer : DrawnSteering * SteeringWheelMaxDeg;
 
 	if (SteeringWheel->IsVisible() && !SteeringWheelAxis.IsNearlyZero())
@@ -197,7 +203,7 @@ void AWSPC2SportsCar::PreRegisterAllComponents()
 
 	// Allow automated tests or launches to pick a hero vehicle via -WSPC2Vehicle=<PresetId>
 	FString CliPreset;
-	if (!bPresetOverrideActive && FParse::Value(FCommandLine::Get(), TEXT("WSPC2Vehicle="), CliPreset) && !CliPreset.IsEmpty())
+	if (bAllowCliVehicleOverride && !bPresetOverrideActive && FParse::Value(FCommandLine::Get(), TEXT("WSPC2Vehicle="), CliPreset) && !CliPreset.IsEmpty())
 	{
 		const FName RequestedId(*CliPreset);
 		if (UWSPC2VehicleProfile::FindBuiltinPreset(RequestedId))
@@ -245,12 +251,22 @@ void AWSPC2SportsCar::BeginPlay()
 	{
 		HideTemplateBodyParts();
 		DisableTemplateBodyCollision();
+		ReweldProfileCollision();
 		ApplyCenterOfMassOverride();
 		ConfigureDamageRig();
 
 		FTimerHandle LogTimer;
 		GetWorld()->GetTimerManager().SetTimer(LogTimer, this, &AWSPC2SportsCar::LogWheelLayout, 3.0f, false);
 	}
+}
+
+float AWSPC2SportsCar::GetActiveBaseRearFriction() const
+{
+	if (ActiveProfileSpec.bUseRealWorldSpecs)
+	{
+		return ActiveProfileSpec.RearFriction;
+	}
+	return GetDefault<UWSPC2VehicleTuning>()->RearFriction;
 }
 
 void AWSPC2SportsCar::ApplyCenterOfMassOverride()
@@ -260,9 +276,12 @@ void AWSPC2SportsCar::ApplyCenterOfMassOverride()
 		const UWSPC2VehicleTuning* Tuning = GetDefault<UWSPC2VehicleTuning>();
 		if (FBodyInstance* BI = GetMesh() ? GetMesh()->GetBodyInstance() : nullptr)
 		{
-			if (Tuning && Tuning->bOverrideCenterOfMass && BI->IsValidBodyInstance())
+			const bool bUseReal = ActiveProfileSpec.bUseRealWorldSpecs;
+			const bool bDoCoM = bUseReal || (Tuning && Tuning->bOverrideCenterOfMass);
+			const FVector DesiredLocalCoM = bUseReal ? ActiveProfileSpec.CenterOfMassOffset : (Tuning ? Tuning->CenterOfMassOffset : FVector(10.0f, 0.0f, 48.0f));
+			if (bDoCoM && BI->IsValidBodyInstance())
 			{
-				const FVector WorldDesiredCoM = GetActorTransform().TransformPosition(Tuning->CenterOfMassOffset);
+				const FVector WorldDesiredCoM = GetActorTransform().TransformPosition(DesiredLocalCoM);
 				Movement->bEnableCenterOfMassOverride = true;
 				Movement->CenterOfMassOverride = BI->GetUnrealWorldTransform().InverseTransformPosition(WorldDesiredCoM);
 			}
@@ -281,8 +300,13 @@ void AWSPC2SportsCar::ConfigureDamageRig()
 		for (int32 i = 0; i < 4; ++i)
 		{
 			Hubs[i] = GetSedanWheelPosition(i);
+			if (SedanWheels.IsValidIndex(i) && SedanWheels[i])
+			{
+				DamageComp->SetDetachedWheelVisualMeshOverride(i, SedanWheels[i]->GetStaticMesh());
+			}
 		}
 		DamageComp->SetBaselineTorqueScale(ActiveMaxTorqueScale);
+		DamageComp->ConfigureFromVehicleProfile(ActiveProfileSpec, Hubs, WheelRadii);
 		DamageComp->SetupDamageRig(GetMesh(), SedanBody, SedanGlass, SedanWheels, Hubs, WheelRadii, bUsingPoliceCruiserMesh);
 	}
 }
@@ -316,12 +340,34 @@ bool AWSPC2SportsCar::SetVehiclePreset(FName NewPresetId)
 
 FName AWSPC2SportsCar::CycleVehiclePreset()
 {
+	return CycleVehiclePresetDirection(1);
+}
+
+FName AWSPC2SportsCar::CycleVehiclePresetDirection(int32 Direction)
+{
 	if (!HasAuthority())
 	{
 		return ActiveVehiclePresetId;
 	}
 
-	const FName NextId = UWSPC2VehicleProfile::GetNextAvailableBuiltinPresetId(ActiveVehiclePresetId);
+	const FName NextId = (Direction >= 0)
+		? UWSPC2VehicleProfile::GetNextAvailableBuiltinPresetId(ActiveVehiclePresetId)
+		: UWSPC2VehicleProfile::GetPreviousAvailableBuiltinPresetId(ActiveVehiclePresetId);
+	if (!NextId.IsNone() && NextId != ActiveVehiclePresetId)
+	{
+		SetVehiclePreset(NextId);
+	}
+	return ActiveVehiclePresetId;
+}
+
+FName AWSPC2SportsCar::CycleVehicleCategory()
+{
+	if (!HasAuthority())
+	{
+		return ActiveVehiclePresetId;
+	}
+
+	const FName NextId = UWSPC2VehicleProfile::GetNextCategoryPresetId(ActiveVehiclePresetId);
 	if (!NextId.IsNone() && NextId != ActiveVehiclePresetId)
 	{
 		SetVehiclePreset(NextId);
@@ -356,32 +402,35 @@ bool AWSPC2SportsCar::TryMountProfileSpec(const FWSPC2VehicleProfileSpec& Spec)
 	}
 
 	UStaticMesh* Wheels[4] = { nullptr, nullptr, nullptr, nullptr };
-	if (Spec.WheelLayoutMode == EWSPC2WheelLayoutMode::BakedCarSpace)
+	if (!Spec.bBakedRunningGear)
 	{
-		if (Spec.WheelMeshes.Num() < 4)
+		if (Spec.WheelLayoutMode == EWSPC2WheelLayoutMode::BakedCarSpace)
 		{
-			return false;
-		}
-		for (int32 i = 0; i < 4; ++i)
-		{
-			Wheels[i] = WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[i]);
-			if (!Wheels[i])
+			if (Spec.WheelMeshes.Num() < 4)
 			{
 				return false;
 			}
+			for (int32 i = 0; i < 4; ++i)
+			{
+				Wheels[i] = WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[i]);
+				if (!Wheels[i])
+				{
+					return false;
+				}
+			}
 		}
-	}
-	else
-	{
-		UStaticMesh* BaseWheel = Spec.WheelMeshes.IsValidIndex(0) ? WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[0]) : nullptr;
-		if (!BaseWheel)
+		else
 		{
-			return false;
-		}
-		for (int32 i = 0; i < 4; ++i)
-		{
-			UStaticMesh* OverrideWheel = (i > 0 && Spec.WheelMeshes.IsValidIndex(i)) ? WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[i]) : nullptr;
-			Wheels[i] = OverrideWheel ? OverrideWheel : BaseWheel;
+			UStaticMesh* BaseWheel = Spec.WheelMeshes.IsValidIndex(0) ? WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[0]) : nullptr;
+			if (!BaseWheel)
+			{
+				return false;
+			}
+			for (int32 i = 0; i < 4; ++i)
+			{
+				UStaticMesh* OverrideWheel = (i > 0 && Spec.WheelMeshes.IsValidIndex(i)) ? WSPC2Sedan::LoadOptionalMesh(Spec.WheelMeshes[i]) : nullptr;
+				Wheels[i] = OverrideWheel ? OverrideWheel : BaseWheel;
+			}
 		}
 	}
 
@@ -415,21 +464,31 @@ bool AWSPC2SportsCar::TryMountProfileSpec(const FWSPC2VehicleProfileSpec& Spec)
 	{
 		SedanWheels[i]->SetStaticMesh(Wheels[i]);
 		SedanWheels[i]->EmptyOverrideMaterials();
-		SedanWheels[i]->SetVisibility(true);
-		SedanWheels[i]->SetHiddenInGame(false);
+		const bool bShowWheel = (Wheels[i] != nullptr);
+		SedanWheels[i]->SetVisibility(bShowWheel);
+		SedanWheels[i]->SetHiddenInGame(!bShowWheel);
 
-		const FBoxSphereBounds WheelBounds = Wheels[i]->GetBounds();
-		if (Spec.WheelLayoutMode == EWSPC2WheelLayoutMode::BakedCarSpace)
+		if (Spec.bBakedRunningGear)
 		{
-			WheelMeshOrigins[i] = WheelBounds.Origin;
-			WheelRadii[i] = FMath::Max(25.0f, static_cast<float>(WheelBounds.BoxExtent.Z));
-			SedanWheels[i]->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+			WheelMeshOrigins[i] = Spec.WheelOffsetsCm.IsValidIndex(i) ? Spec.WheelOffsetsCm[i] : FVector::ZeroVector;
+			WheelRadii[i] = (i >= 2 && Spec.RearWheelRadiusCm > 10.0f) ? Spec.RearWheelRadiusCm : FMath::Max(25.0f, Spec.DefaultWheelRadiusCm);
 		}
 		else
 		{
-			WheelMeshOrigins[i] = Spec.WheelOffsetsCm.IsValidIndex(i) ? Spec.WheelOffsetsCm[i] : FVector::ZeroVector;
-			const float MeasuredRadius = static_cast<float>(WheelBounds.BoxExtent.Z);
-			WheelRadii[i] = (Spec.DefaultWheelRadiusCm > 10.0f) ? Spec.DefaultWheelRadiusCm : FMath::Max(25.0f, MeasuredRadius);
+			const FBoxSphereBounds WheelBounds = Wheels[i]->GetBounds();
+			if (Spec.WheelLayoutMode == EWSPC2WheelLayoutMode::BakedCarSpace)
+			{
+				WheelMeshOrigins[i] = WheelBounds.Origin;
+				WheelRadii[i] = FMath::Max(25.0f, static_cast<float>(WheelBounds.BoxExtent.Z));
+				SedanWheels[i]->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+			}
+			else
+			{
+				WheelMeshOrigins[i] = Spec.WheelOffsetsCm.IsValidIndex(i) ? Spec.WheelOffsetsCm[i] : FVector::ZeroVector;
+				const float MeasuredRadius = static_cast<float>(WheelBounds.BoxExtent.Z);
+				const float ProfileRadius = (i >= 2 && Spec.RearWheelRadiusCm > 10.0f) ? Spec.RearWheelRadiusCm : Spec.DefaultWheelRadiusCm;
+				WheelRadii[i] = (ProfileRadius > 10.0f) ? ProfileRadius : FMath::Max(25.0f, MeasuredRadius);
+			}
 		}
 		DrawnWheelAngle[i] = 0.0f;
 	}
@@ -483,12 +542,14 @@ bool AWSPC2SportsCar::TryMountProfileSpec(const FWSPC2VehicleProfileSpec& Spec)
 
 	bUsingSedanBody = true;
 	bUsingPoliceCruiserMesh = Spec.bIsPoliceCruiser;
+	ActiveProfileSpec = Spec;
 	ActiveWheelLayoutMode = Spec.WheelLayoutMode;
 	ActiveVehiclePresetId = Spec.PresetId;
 	ActiveVehicleDisplayName = Spec.DisplayName.IsEmpty() ? Spec.PresetId.ToString() : Spec.DisplayName.ToString();
 	ActiveMassScale = FMath::Clamp(Spec.MassScale, 0.4f, 3.0f);
 	ActiveMaxTorqueScale = FMath::Clamp(Spec.MaxTorqueScale, 0.4f, 3.0f);
 	ActiveChassisHeightCm = FMath::Clamp(Spec.ChassisHeightCm, 80.0f, 320.0f);
+	ActiveMaxSteerAngle = Spec.bUseRealWorldSpecs ? FMath::Clamp(Spec.MaxSteerAngle, 15.0f, 48.0f) : GetDefault<UWSPC2VehicleTuning>()->MaxSteerAngle;
 
 	SetCrewLayout(Spec.GunnerSeatLocation, Spec.LightBarCentre, Spec.LightBarHalfSpacing);
 	MountCrew(Spec);
@@ -497,6 +558,11 @@ bool AWSPC2SportsCar::TryMountProfileSpec(const FWSPC2VehicleProfileSpec& Spec)
 	if (Spec.OnCarViewLocations.Num() > 0)
 	{
 		SetOnCarViews(Spec.OnCarViewLocations, Spec.OnCarViewNames);
+	}
+
+	if (UWSPC2VehicleAudioComponent* Audio = GetVehicleAudio())
+	{
+		Audio->ConfigureForVehicleProfile(Spec);
 	}
 
 	return true;
@@ -547,11 +613,16 @@ void AWSPC2SportsCar::ApplyVehicleProfile(bool bRuntimeSwitch)
 
 	// Enable welded Chaos vehicle collision & rigid-body hit notifications
 	BodyCollision->SetCollisionProfileName(FName("Vehicle"));
+	BodyCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	BodyCollision->SetNotifyRigidBodyCollision(true);
+	BodyCollision->BodyInstance.bAutoWeld = true;
 	CabinCollision->SetCollisionProfileName(FName("Vehicle"));
+	CabinCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	CabinCollision->SetNotifyRigidBodyCollision(true);
+	CabinCollision->BodyInstance.bAutoWeld = true;
 	if (GetMesh())
 	{
+		GetMesh()->SetCollisionProfileName(FName("Vehicle"));
 		GetMesh()->SetNotifyRigidBodyCollision(true);
 	}
 
@@ -583,6 +654,7 @@ void AWSPC2SportsCar::ApplyVehicleProfile(bool bRuntimeSwitch)
 
 		HideTemplateBodyParts();
 		DisableTemplateBodyCollision();
+		ReweldProfileCollision();
 		ApplyWheelTuning();
 		ApplyCenterOfMassOverride();
 		ConfigureDamageRig();
@@ -644,6 +716,49 @@ void AWSPC2SportsCar::DisableTemplateBodyCollision()
 	UE_LOG(LogWSPC2, Log, TEXT("HeroVehicle [%s]: %d template collision shape(s) switched off; profile boxes carry the collision"), *ActiveVehiclePresetId.ToString(), Disabled);
 }
 
+void AWSPC2SportsCar::ReweldProfileCollision()
+{
+	USkeletalMeshComponent* Skel = GetMesh();
+	if (!Skel)
+	{
+		return;
+	}
+
+	Skel->SetCollisionProfileName(FName("Vehicle"));
+	Skel->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Skel->SetNotifyRigidBodyCollision(true);
+	if (FBodyInstance* RootBI = Skel->GetBodyInstance(NAME_None))
+	{
+		RootBI->SetInstanceNotifyRBCollision(true);
+	}
+
+	auto WeldBox = [Skel](UBoxComponent* Box)
+	{
+		if (!Box)
+		{
+			return;
+		}
+		Box->UnWeldFromParent();
+		Box->SetSimulatePhysics(false);
+		Box->SetCollisionProfileName(FName("Vehicle"));
+		Box->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Box->SetNotifyRigidBodyCollision(true);
+		Box->BodyInstance.bAutoWeld = true;
+		Box->AttachToComponent(Skel, FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+		Box->RecreatePhysicsState();
+		Box->WeldTo(Skel, NAME_None);
+	};
+
+	WeldBox(BodyCollision);
+	WeldBox(CabinCollision);
+
+	UE_LOG(LogWSPC2, Log, TEXT("HeroVehicle [%s] ReweldProfileCollision: BodyWelded=%d CabinWelded=%d BodyCol=%d RootNotify=1"),
+		*ActiveVehiclePresetId.ToString(),
+		BodyCollision && BodyCollision->IsWelded() ? 1 : 0,
+		CabinCollision && CabinCollision->IsWelded() ? 1 : 0,
+		BodyCollision ? static_cast<int32>(BodyCollision->GetCollisionEnabled()) : -1);
+}
+
 void AWSPC2SportsCar::Tick(float Delta)
 {
 	Super::Tick(Delta);
@@ -660,6 +775,29 @@ void AWSPC2SportsCar::Tick(float Delta)
 
 	for (int32 Index = 0; Index < SedanWheels.Num(); ++Index)
 	{
+		if (ActiveProfileSpec.bBakedRunningGear)
+		{
+			SedanWheels[Index]->SetVisibility(false);
+			if (Index < FrontBrakes.Num())
+			{
+				FrontBrakes[Index]->SetVisibility(false);
+			}
+			continue;
+		}
+
+		const bool bDetached = DamageComp && DamageComp->IsWheelDetached(Index);
+		SedanWheels[Index]->SetVisibility(!bDetached && SedanWheels[Index]->GetStaticMesh() != nullptr);
+		SedanWheels[Index]->SetHiddenInGame(bDetached || SedanWheels[Index]->GetStaticMesh() == nullptr);
+		if (Index < FrontBrakes.Num() && FrontBrakes[Index]->GetStaticMesh())
+		{
+			FrontBrakes[Index]->SetVisibility(!bDetached);
+			FrontBrakes[Index]->SetHiddenInGame(bDetached);
+		}
+		if (bDetached)
+		{
+			continue;
+		}
+
 		FVector Position = GetSedanWheelPosition(Index);
 		FRotator Motion = FRotator::ZeroRotator;
 
@@ -671,10 +809,6 @@ void AWSPC2SportsCar::Tick(float Delta)
 			Position += -Wheel->GetSuspensionAxis() * Wheel->GetSuspensionOffset();
 			Motion.Yaw = Wheel->GetSteerAngle();
 
-			// The step comes from the wheel's spin rate, not from the difference of two angles: the simulation wraps
-			// the angle at every full turn, and the plain difference then jumped ~350 degrees the wrong way once per
-			// revolution. Each jump turned the wheel backwards for a frame, and motion blur and the upscaler smeared
-			// it; at 90 km/h that happened about twelve times a second.
 			const float MaxStep = FMath::Max(GetDefault<UWSPC2VehicleTuning>()->WheelMaxDrawnStepDeg, 1.0f);
 			const float Step = FMath::Clamp(Wheel->GetRotationAngularVelocity() * Delta, -MaxStep, MaxStep);
 
@@ -684,21 +818,20 @@ void AWSPC2SportsCar::Tick(float Delta)
 
 			if (DamageComp)
 			{
-				Motion.Roll = DamageComp->GetWheelCamberDamageDeg(Index);
+				const float WobbleDeg = DamageComp->GetWheelWobbleAmplitudeDeg(Index) * FMath::Sin(FMath::DegreesToRadians(DrawnWheelAngle[Index]));
+				Motion.Roll = DamageComp->GetWheelCamberDamageDeg(Index) + WobbleDeg;
+				Motion.Yaw += DamageComp->GetWheelToeDamageDeg(Index);
 				Position.Z -= DamageComp->GetWheelVisualDropCm(Index);
 			}
 		}
 
 		if (ActiveWheelLayoutMode == EWSPC2WheelLayoutMode::BakedCarSpace)
 		{
-			// CitySampleVehicles wheel vertices are baked around car origin (0,0,0) with hub at WheelMeshOrigins[Index].
-			// Apply steering yaw and damaged camber roll before spinning around the tilted local axle.
 			const FQuat HubTilt = FRotator(0.0f, Motion.Yaw, Motion.Roll).Quaternion();
 			const FQuat Q = HubTilt * FRotator(Motion.Pitch, 0.0f, 0.0f).Quaternion();
 			const FVector RelLoc = Position - Q.RotateVector(WheelMeshOrigins[Index]);
 			SedanWheels[Index]->SetRelativeLocationAndRotation(RelLoc, Q);
 
-			// Front brakes follow the same hub, steered and cambered on the spring, without spinning
 			if (Index < FrontBrakes.Num() && FrontBrakes[Index]->GetStaticMesh())
 			{
 				const FVector BrakeLoc = bFrontBrakeBakedCarSpace[Index]
@@ -712,8 +845,15 @@ void AWSPC2SportsCar::Tick(float Delta)
 			// Prepared GLBs: +X forward, origin at wheel hub; Left=Yaw 0, Right=Yaw 180
 			const bool bRight = (Index % 2) == 1;
 			const FQuat Facing = FRotator(0.0f, bRight ? 180.0f : 0.0f, 0.0f).Quaternion();
-			const FQuat Q = FRotator(0.0f, Motion.Yaw, Motion.Roll).Quaternion() * FRotator(Motion.Pitch, 0.0f, 0.0f).Quaternion();
+			const FQuat HubTilt = FRotator(0.0f, Motion.Yaw, Motion.Roll).Quaternion();
+			const FQuat Q = HubTilt * FRotator(Motion.Pitch, 0.0f, 0.0f).Quaternion();
 			SedanWheels[Index]->SetRelativeLocationAndRotation(Position, Q * Facing);
+
+			// Hub-centered FL/FR brake calipers steer & ride suspension cleanly without spinning
+			if (Index < FrontBrakes.Num() && FrontBrakes[Index]->GetStaticMesh())
+			{
+				FrontBrakes[Index]->SetRelativeLocationAndRotation(Position, HubTilt);
+			}
 		}
 		else
 		{
@@ -767,70 +907,107 @@ void AWSPC2SportsCar::ApplyTuning()
 		return;
 	}
 
+	const bool bUseReal = ActiveProfileSpec.bUseRealWorldSpecs;
+	const EWSPC2Drivetrain Drive = bUseReal ? ActiveProfileSpec.Drivetrain : EWSPC2Drivetrain::RWD;
+
 	// chassis
 	Movement->ChassisHeight = ActiveChassisHeightCm;
-	Movement->Mass = Tuning->MassKg * ActiveMassScale;
-	Movement->DragCoefficient = Tuning->DragCoefficient;
-	Movement->DownforceCoefficient = Tuning->DownforceCoefficient;
+	Movement->Mass = bUseReal ? ActiveProfileSpec.RealMassKg : (Tuning->MassKg * ActiveMassScale);
+	Movement->DragCoefficient = bUseReal ? ActiveProfileSpec.DragCoefficient : Tuning->DragCoefficient;
+	Movement->DownforceCoefficient = bUseReal ? ActiveProfileSpec.DownforceCoefficient : Tuning->DownforceCoefficient;
 
-	// wheels: steer at the front, drive and handbrake at the rear
+	UClass* FrontClass = (Drive == EWSPC2Drivetrain::RWD)
+		? UWSPC2PatrolWheelFront::StaticClass()
+		: UWSPC2PatrolWheelFrontDriven::StaticClass();
+	UClass* RearClass = (Drive == EWSPC2Drivetrain::FWD)
+		? UWSPC2PatrolWheelRearFree::StaticClass()
+		: UWSPC2PatrolWheelRear::StaticClass();
+
 	if (Movement->WheelSetups.Num() == 4)
 	{
-		Movement->WheelSetups[0].WheelClass = UWSPC2PatrolWheelFront::StaticClass();
-		Movement->WheelSetups[1].WheelClass = UWSPC2PatrolWheelFront::StaticClass();
-		Movement->WheelSetups[2].WheelClass = UWSPC2PatrolWheelRear::StaticClass();
-		Movement->WheelSetups[3].WheelClass = UWSPC2PatrolWheelRear::StaticClass();
+		Movement->WheelSetups[0].WheelClass = FrontClass;
+		Movement->WheelSetups[1].WheelClass = FrontClass;
+		Movement->WheelSetups[2].WheelClass = RearClass;
+		Movement->WheelSetups[3].WheelClass = RearClass;
 	}
 
-	Movement->DifferentialSetup.DifferentialType = EVehicleDifferential::RearWheelDrive;
+	Movement->DifferentialSetup.DifferentialType =
+		(Drive == EWSPC2Drivetrain::FWD) ? EVehicleDifferential::FrontWheelDrive :
+		(Drive == EWSPC2Drivetrain::AWD) ? EVehicleDifferential::AllWheelDrive :
+		EVehicleDifferential::RearWheelDrive;
 
-	// engine: a lazy V8, strong in the midrange and fading towards the redline
-	Movement->EngineSetup.MaxRPM = Tuning->MaxRPM;
-	Movement->EngineSetup.EngineIdleRPM = Tuning->IdleRPM;
+	// engine
+	const float MaxRPM = bUseReal ? ActiveProfileSpec.MaxRPM : Tuning->MaxRPM;
+	const float IdleRPM = bUseReal ? ActiveProfileSpec.IdleRPM : Tuning->IdleRPM;
+	const float PeakRPM = bUseReal ? FMath::Clamp(ActiveProfileSpec.PeakTorqueRPM, IdleRPM + 200.0f, MaxRPM - 150.0f) : (MaxRPM * 0.70f);
+	const float BaseTorqueNm = bUseReal ? ActiveProfileSpec.RealMaxTorqueNm : (Tuning->MaxTorqueNm * ActiveMaxTorqueScale);
+	const float StallRatio = bUseReal ? ActiveProfileSpec.ConverterStallRatio : Tuning->ConverterStallRatio;
+	const float FadeRPM = bUseReal ? FMath::Max(PeakRPM * 0.75f, 1600.0f) : Tuning->ConverterFadeRPM;
+
+	Movement->EngineSetup.MaxRPM = MaxRPM;
+	Movement->EngineSetup.EngineIdleRPM = IdleRPM;
 	Movement->EngineSetup.EngineBrakeEffect = Tuning->EngineBrakeEffect;
-	Movement->EngineSetup.EngineRevUpMOI = Tuning->EngineRevUpMOI;
+	Movement->EngineSetup.EngineRevUpMOI = bUseReal ? FMath::Clamp(ActiveProfileSpec.RealMassKg / 900.0f, 1.2f, 4.5f) : Tuning->EngineRevUpMOI;
 	Movement->EngineSetup.EngineRevDownRate = Tuning->EngineRevDownRate;
 
-	// drop any curve asset the Blueprint points at, so we never edit a shared asset
 	Movement->EngineSetup.TorqueCurve.ExternalCurve = nullptr;
 
 	if (FRichCurve* TorqueCurve = Movement->EngineSetup.TorqueCurve.GetRichCurve())
 	{
-		const float RpmScale = Tuning->MaxRPM / 5750.0f;
-
-		// engine torque as a fraction of its peak
-		static const float Rpm[] = { 0.0f, 750.0f, 1500.0f, 2500.0f, 4000.0f, 5000.0f, 5750.0f };
-		static const float Fraction[] = { 0.55f, 0.62f, 0.80f, 0.93f, 1.0f, 0.90f, 0.72f };
-
-		float Peak = 0.0f;
-
 		TorqueCurve->Reset();
-
-		for (int32 Key = 0; Key < UE_ARRAY_COUNT(Rpm); ++Key)
+		if (bUseReal)
 		{
-			const float Fade = FMath::Clamp(1.0f - Rpm[Key] / Tuning->ConverterFadeRPM, 0.0f, 1.0f);
-			const float Value = Fraction[Key] * (1.0f + (Tuning->ConverterStallRatio - 1.0f) * Fade);
+			// Exact real-world torque shape anchored at peak torque (PeakRPM, 1.0) and redline hp (0.96*MaxRPM)
+			const float RedlineRPM = FMath::Max(PeakRPM + 250.0f, MaxRPM * 0.96f);
+			const float TargetRedlineFrac = FMath::Clamp(
+				(ActiveProfileSpec.RealHorsepower * 7127.0f) / FMath::Max(BaseTorqueNm * RedlineRPM, 1000.0f),
+				0.52f, 0.97f);
+			const float MidRPM = 0.5f * (PeakRPM + RedlineRPM);
+			const float MidFrac = FMath::Lerp(1.0f, TargetRedlineFrac, 0.42f);
 
-			TorqueCurve->AddKey(Rpm[Key] * RpmScale, Value);
-			Peak = FMath::Max(Peak, Value);
+			const float RpmPts[7] = { 0.0f, IdleRPM, FMath::Lerp(IdleRPM, PeakRPM, 0.48f), PeakRPM, MidRPM, RedlineRPM, MaxRPM + 350.0f };
+			const float FracPts[7] = { 0.58f, 0.68f, 0.88f, 1.00f, MidFrac, TargetRedlineFrac, 0.25f };
+			float Peak = 0.0f;
+			for (int32 Key = 0; Key < 7; ++Key)
+			{
+				const float Fade = FMath::Clamp(1.0f - RpmPts[Key] / FadeRPM, 0.0f, 1.0f);
+				const float Val = FracPts[Key] * (1.0f + (StallRatio - 1.0f) * Fade);
+				TorqueCurve->AddKey(RpmPts[Key], Val);
+				Peak = FMath::Max(Peak, Val);
+			}
+			Movement->EngineSetup.MaxTorque = BaseTorqueNm * Peak;
 		}
-
-		// the simulation rescales the curve so its highest point equals MaxTorque
-		Movement->EngineSetup.MaxTorque = Tuning->MaxTorqueNm * ActiveMaxTorqueScale * Peak;
+		else
+		{
+			const float RpmScale = MaxRPM / 5750.0f;
+			static const float Rpm[] = { 0.0f, 750.0f, 1500.0f, 2500.0f, 4000.0f, 5000.0f, 5750.0f };
+			static const float Fraction[] = { 0.55f, 0.62f, 0.80f, 0.93f, 1.0f, 0.90f, 0.72f };
+			float Peak = 0.0f;
+			for (int32 Key = 0; Key < UE_ARRAY_COUNT(Rpm); ++Key)
+			{
+				const float Fade = FMath::Clamp(1.0f - Rpm[Key] / FadeRPM, 0.0f, 1.0f);
+				const float Value = Fraction[Key] * (1.0f + (StallRatio - 1.0f) * Fade);
+				TorqueCurve->AddKey(Rpm[Key] * RpmScale, Value);
+				Peak = FMath::Max(Peak, Value);
+			}
+			Movement->EngineSetup.MaxTorque = BaseTorqueNm * Peak;
+		}
 	}
 
 	// transmission
 	Movement->TransmissionSetup.bUseAutomaticGears = true;
 	Movement->TransmissionSetup.bUseAutoReverse = true;
-	Movement->TransmissionSetup.FinalRatio = Tuning->FinalDriveRatio;
-	Movement->TransmissionSetup.ChangeUpRPM = Tuning->ChangeUpRPM;
-	Movement->TransmissionSetup.ChangeDownRPM = Tuning->ChangeDownRPM;
-	Movement->TransmissionSetup.GearChangeTime = Tuning->GearChangeTime;
+	Movement->TransmissionSetup.FinalRatio = bUseReal ? ActiveProfileSpec.FinalDriveRatio : Tuning->FinalDriveRatio;
+	Movement->TransmissionSetup.ChangeUpRPM = bUseReal ? ActiveProfileSpec.ChangeUpRPM : Tuning->ChangeUpRPM;
+	Movement->TransmissionSetup.ChangeDownRPM = bUseReal ? ActiveProfileSpec.ChangeDownRPM : Tuning->ChangeDownRPM;
+	Movement->TransmissionSetup.GearChangeTime = bUseReal ? ActiveProfileSpec.GearChangeTime : Tuning->GearChangeTime;
 	Movement->TransmissionSetup.TransmissionEfficiency = Tuning->TransmissionEfficiency;
-	Movement->TransmissionSetup.ForwardGearRatios = Tuning->ForwardGearRatios;
+	Movement->TransmissionSetup.ForwardGearRatios = (bUseReal && ActiveProfileSpec.ForwardGearRatios.Num() > 0)
+		? ActiveProfileSpec.ForwardGearRatios
+		: Tuning->ForwardGearRatios;
 
 	Movement->TransmissionSetup.ReverseGearRatios.SetNum(1);
-	Movement->TransmissionSetup.ReverseGearRatios[0] = Tuning->ReverseGearRatio;
+	Movement->TransmissionSetup.ReverseGearRatios[0] = bUseReal ? ActiveProfileSpec.ReverseGearRatio : Tuning->ReverseGearRatio;
 
 	// steering: full lock at parking speed, less as speed rises so a keyboard tap does not spin the car
 	Movement->SteeringSetup.SteeringType = ESteeringType::Ackermann;
@@ -839,32 +1016,46 @@ void AWSPC2SportsCar::ApplyTuning()
 
 	if (FRichCurve* SteeringCurve = Movement->SteeringSetup.SteeringCurve.GetRichCurve())
 	{
-		// Flat: the speed limit on steering is applied to the driver's input instead (AWSPC2Pawn::GetSteeringAllowance),
-		// where it can tell turning in from countersteering. Here it would cut both.
-		// Two keys, never one: the engine samples the curve in steps of (last key time / 20), and a single key at
-		// zero made that step zero, an endless loop that tried to allocate 30 GB.
 		SteeringCurve->Reset();
 		SteeringCurve->AddKey(0.0f, 1.0f);
 		SteeringCurve->AddKey(300.0f, 1.0f);
 	}
 
-	// how hard the body resists starting and stopping a spin; the template's small physics shapes give a light car
 	Movement->InertiaTensorScale = FVector(1.0f, 1.0f, Tuning->YawInertiaScale);
-	Movement->bEnableCenterOfMassOverride = Tuning->bOverrideCenterOfMass;
-	if (Tuning->bOverrideCenterOfMass)
+	const bool bOverrideCoM = bUseReal || Tuning->bOverrideCenterOfMass;
+	Movement->bEnableCenterOfMassOverride = bOverrideCoM;
+	if (bOverrideCoM)
 	{
-		Movement->CenterOfMassOverride = Tuning->CenterOfMassOffset;
+		Movement->CenterOfMassOverride = bUseReal ? ActiveProfileSpec.CenterOfMassOffset : Tuning->CenterOfMassOffset;
 	}
 
-	// wheel properties with no runtime setter: configure CDOs before Chaos creates the physics wheels
-	UWSPC2PatrolWheelFront* FrontWheelCDO = GetMutableDefault<UWSPC2PatrolWheelFront>();
-	UWSPC2PatrolWheelRear* RearWheelCDO = GetMutableDefault<UWSPC2PatrolWheelRear>();
-	FrontWheelCDO->SideSlipModifier = Tuning->FrontSlideGrip;
-	RearWheelCDO->SideSlipModifier = Tuning->RearSlideGrip;
-	FrontWheelCDO->CorneringStiffness = Tuning->FrontCorneringStiffness;
-	RearWheelCDO->CorneringStiffness = Tuning->RearCorneringStiffness;
-	FrontWheelCDO->RollbarScaling = Tuning->FrontRollbarScaling;
-	RearWheelCDO->RollbarScaling = Tuning->RearRollbarScaling;
+	// Wheel CDO properties: always keep DefaultGame.ini baseline in shared CDOs so AI traffic
+	// vehicles never contaminate the player vehicle's suspension/rollbar behavior. Per-car values
+	// are applied exclusively on runtime wheel instances in ApplyWheelTuning().
+	UChaosVehicleWheel* FrontWheelCDO = Cast<UChaosVehicleWheel>(FrontClass->GetDefaultObject());
+	UChaosVehicleWheel* RearWheelCDO = Cast<UChaosVehicleWheel>(RearClass->GetDefaultObject());
+	if (FrontWheelCDO)
+	{
+		FrontWheelCDO->SideSlipModifier = Tuning->FrontSlideGrip;
+		FrontWheelCDO->CorneringStiffness = Tuning->FrontCorneringStiffness;
+		FrontWheelCDO->RollbarScaling = Tuning->FrontRollbarScaling;
+		FrontWheelCDO->SpringRate = Tuning->SpringRate;
+		FrontWheelCDO->SpringPreload = Tuning->SpringPreload;
+		FrontWheelCDO->SuspensionDampingRatio = Tuning->DampingRatio;
+		FrontWheelCDO->SuspensionMaxRaise = Tuning->MaxRaise;
+		FrontWheelCDO->SuspensionMaxDrop = Tuning->MaxDrop;
+	}
+	if (RearWheelCDO)
+	{
+		RearWheelCDO->SideSlipModifier = Tuning->RearSlideGrip;
+		RearWheelCDO->CorneringStiffness = Tuning->RearCorneringStiffness;
+		RearWheelCDO->RollbarScaling = Tuning->RearRollbarScaling;
+		RearWheelCDO->SpringRate = Tuning->SpringRate;
+		RearWheelCDO->SpringPreload = Tuning->SpringPreload;
+		RearWheelCDO->SuspensionDampingRatio = Tuning->DampingRatio;
+		RearWheelCDO->SuspensionMaxRaise = Tuning->MaxRaise;
+		RearWheelCDO->SuspensionMaxDrop = Tuning->MaxDrop;
+	}
 
 	// input smoothing
 	Movement->SteeringInputRate.RiseRate = Tuning->SteeringRiseRate;
@@ -883,17 +1074,38 @@ void AWSPC2SportsCar::ApplyWheelTuning()
 		return;
 	}
 
+	const bool bUseReal = ActiveProfileSpec.bUseRealWorldSpecs;
+	const float FFric = bUseReal ? ActiveProfileSpec.FrontFriction : Tuning->FrontFriction;
+	const float RFric = bUseReal ? ActiveProfileSpec.RearFriction : Tuning->RearFriction;
+	const float FBrake = bUseReal ? ActiveProfileSpec.FrontBrakeTorque : Tuning->FrontBrakeTorque;
+	const float RBrake = bUseReal ? ActiveProfileSpec.RearBrakeTorque : Tuning->RearBrakeTorque;
+	const float HBrake = bUseReal ? ActiveProfileSpec.HandbrakeTorque : Tuning->HandbrakeTorque;
+	const float SteerDeg = bUseReal ? ActiveProfileSpec.MaxSteerAngle : Tuning->MaxSteerAngle;
+	const bool bABSFlag = bUseReal ? ActiveProfileSpec.bABS : Tuning->bABS;
+	const float FSpring = bUseReal ? ActiveProfileSpec.FrontSpringRate : Tuning->SpringRate;
+	const float RSpring = bUseReal ? ActiveProfileSpec.RearSpringRate : Tuning->SpringRate;
+	const float Damp = bUseReal ? ActiveProfileSpec.SuspensionDampingRatio : Tuning->DampingRatio;
+	const float Preload = bUseReal ? ActiveProfileSpec.SpringPreload : Tuning->SpringPreload;
+	const float Raise = bUseReal ? ActiveProfileSpec.SuspensionMaxRaise : Tuning->MaxRaise;
+	const float Drop = bUseReal ? ActiveProfileSpec.SuspensionMaxDrop : Tuning->MaxDrop;
+	const float FRollbar = bUseReal ? ActiveProfileSpec.FrontRollbarScaling : Tuning->FrontRollbarScaling;
+	const float RRollbar = bUseReal ? ActiveProfileSpec.RearRollbarScaling : Tuning->RearRollbarScaling;
+
 	for (int32 WheelIndex = 0; WheelIndex < Movement->WheelSetups.Num(); ++WheelIndex)
 	{
 		const bool bFront = WheelIndex < 2;
 
-		Movement->SetWheelFrictionMultiplier(WheelIndex, bFront ? Tuning->FrontFriction : Tuning->RearFriction);
-		Movement->SetWheelMaxBrakeTorque(WheelIndex, bFront ? Tuning->FrontBrakeTorque : Tuning->RearBrakeTorque);
-		Movement->SetWheelHandbrakeTorque(WheelIndex, bFront ? 0.0f : Tuning->HandbrakeTorque);
-		Movement->SetWheelMaxSteerAngle(WheelIndex, bFront ? Tuning->MaxSteerAngle : 0.0f);
-		Movement->SetABSEnabled(WheelIndex, Tuning->bABS);
+		Movement->SetWheelFrictionMultiplier(WheelIndex, bFront ? FFric : RFric);
+		Movement->SetWheelMaxBrakeTorque(WheelIndex, bFront ? FBrake : RBrake);
+		Movement->SetWheelHandbrakeTorque(WheelIndex, bFront ? 0.0f : HBrake);
+		Movement->SetWheelMaxSteerAngle(WheelIndex, bFront ? SteerDeg : 0.0f);
+		Movement->SetABSEnabled(WheelIndex, bABSFlag);
 		Movement->SetTractionControlEnabled(WheelIndex, Tuning->bTractionControl);
-		Movement->SetSuspensionParams(Tuning->SpringRate, Tuning->DampingRatio, Tuning->SpringPreload, Tuning->MaxRaise, Tuning->MaxDrop, WheelIndex);
+		Movement->SetSuspensionParams(bFront ? FSpring : RSpring, Damp, Preload, Raise, Drop, WheelIndex);
+		if (Movement->Wheels.IsValidIndex(WheelIndex) && Movement->Wheels[WheelIndex])
+		{
+			Movement->Wheels[WheelIndex]->RollbarScaling = bFront ? FRollbar : RRollbar;
+		}
 
 		if (bUsingSedanBody)
 		{

@@ -25,7 +25,16 @@ public class WSPC2 : ModuleRules
 			"NetCore",
 			"Landscape",
 			"RenderCore",
-			"RHI"
+			"RHI",
+			"ProceduralMeshComponent",
+			"AudioMixer",
+			"MetasoundEngine",
+			"AudioExtensions"
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"Json",
+			"JsonUtilities"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {

@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "WheeledVehiclePawn.h"
+#include "WSPC2Types.h"
+#include "WSPC2VehicleProfile.h"
 #include "WSPC2Pawn.generated.h"
 
 class UCameraComponent;
@@ -78,6 +80,13 @@ class AWSPC2Pawn : public AWheeledVehiclePawn
 	/** Siren state, owned by the server and replicated to everyone */
 	UPROPERTY(ReplicatedUsing = OnRep_Siren)
 	bool bSirenOn = false;
+
+	/** Active US police siren pattern (Wail, Yelp, Phaser, Off) */
+	UPROPERTY(ReplicatedUsing = OnRep_Siren)
+	EWSPC2SirenMode SirenMode = EWSPC2SirenMode::Off;
+
+	/** Last active non-Off siren mode remembered across [H] toggles */
+	EWSPC2SirenMode LastActiveSirenMode = EWSPC2SirenMode::Wail;
 
 	/** Drives the light bar flash */
 	float SirenFlashTime = 0.0f;
@@ -283,8 +292,25 @@ public:
 	/** Turns the siren on or off. Server only; clients go through their player controller. */
 	void SetSiren(bool bOn);
 
+	/** Switches to a specific US police siren pattern (Wail, Yelp, Phaser, Off). Server only. */
+	void SetSirenMode(EWSPC2SirenMode NewMode);
+
+	/** Cycles Wail -> Yelp -> Phaser -> Wail (turns on Wail if currently Off). Server only. */
+	EWSPC2SirenMode CycleSirenMode();
+
 	UFUNCTION(BlueprintPure, Category="Vehicle")
-	bool IsSirenOn() const { return bSirenOn; }
+	bool IsSirenOn() const { return bSirenOn || SirenMode != EWSPC2SirenMode::Off; }
+
+	UFUNCTION(BlueprintPure, Category="Vehicle")
+	EWSPC2SirenMode GetSirenMode() const { return SirenMode; }
+
+	const TCHAR* GetSirenModeName() const;
+
+	/** Triggers a dual-tone Federal Signal airhorn blast across server & clients. */
+	void TriggerAirhorn();
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayAirhorn();
 
 	/** Fraction of full lock the driver may use now: limited by speed when turning in, never when countersteering */
 	float GetSteeringAllowance(float Input) const;
@@ -296,6 +322,18 @@ public:
 	/** Human-readable name of the active hero chassis (overridden by AWSPC2SportsCar). */
 	UFUNCTION(BlueprintPure, Category="Vehicle")
 	virtual FString GetActiveVehicleDisplayName() const { return TEXT("Patrol Cruiser"); }
+
+	virtual FName GetActivePresetId() const { return FName("Patrol"); }
+	virtual FString GetActiveRoleGroup() const { return TEXT("Builtin"); }
+	virtual FString GetActiveAudioProfile() const { return TEXT("V8_Cruiser"); }
+	virtual float GetActiveIdleRPM() const { return 720.0f; }
+	virtual float GetActiveMaxRPM() const { return 5750.0f; }
+
+	/** Active drivetrain layout (overridden by AWSPC2SportsCar). */
+	virtual EWSPC2Drivetrain GetActiveDrivetrain() const { return EWSPC2Drivetrain::RWD; }
+
+	/** Active baseline rear tire friction multiplier (overridden by AWSPC2SportsCar). */
+	virtual float GetActiveBaseRearFriction() const;
 
 	USceneComponent* GetGunnerSeat() const { return GunnerSeat; }
 
@@ -346,4 +384,6 @@ public:
 	FORCEINLINE const TObjectPtr<UChaosWheeledVehicleMovementComponent>& GetChaosVehicleMovement() const { return ChaosVehicleMovement; }
 	/** Returns the Chaos vehicle damage component */
 	FORCEINLINE UWSPC2VehicleDamageComponent* GetVehicleDamage() const { return VehicleDamage; }
+	/** Returns the vehicle audio component */
+	FORCEINLINE UWSPC2VehicleAudioComponent* GetVehicleAudio() const { return VehicleAudio; }
 };

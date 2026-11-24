@@ -88,6 +88,21 @@ protected:
 	TObjectPtr<UInputAction> CycleVehicleAction;
 
 	UPROPERTY()
+	TObjectPtr<UInputAction> PrevVehicleAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> CategoryVehicleAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> SirenModeAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> AirhornAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> ShowroomSwapAction;
+
+	UPROPERTY()
 	TObjectPtr<UInputAction> WeaponPrevAction;
 
 	UPROPERTY()
@@ -131,6 +146,11 @@ protected:
 	void OnSiren(const FInputActionValue& Value);
 	void OnCamera(const FInputActionValue& Value);
 	void OnCycleVehicle(const FInputActionValue& Value);
+	void OnPrevVehicle(const FInputActionValue& Value);
+	void OnCategoryVehicle(const FInputActionValue& Value);
+	void OnSirenMode(const FInputActionValue& Value);
+	void OnAirhorn(const FInputActionValue& Value);
+	void OnShowroomSwap(const FInputActionValue& Value);
 	void OnWeaponPrev(const FInputActionValue& Value);
 	void OnWeaponNext(const FInputActionValue& Value);
 	void OnLock(const FInputActionValue& Value);
@@ -260,6 +280,17 @@ public:
 	float TestGunClock = 0.0f;
 	int32 TestGunPulses = 0;
 
+	bool bTestTrackAudit = false;
+	float TestTrackAuditClock = 0.0f;
+	int32 TestTrackAuditPhase = 0;
+	int32 TestTrackAuditAudioStep = 0;
+	int32 TestTrackAuditSubStep = 0;
+	bool bTestTrackAuditPass = true;
+	TWeakObjectPtr<AWSPC2Pawn> TestTrackAuditTargetCar;
+	FVector TestTrackAuditTargetStartPos = FVector::ZeroVector;
+	float TestTrackAuditTargetInitSpeed = 0.0f;
+	void TickTestTrackAudit(float Delta);
+
 	UPROPERTY()
 	TObjectPtr<AActor> TestGunTarget;
 
@@ -280,6 +311,34 @@ public:
 	/** Console command: cycles to the next available hero vehicle preset (same as [V]). */
 	UFUNCTION(Exec)
 	void NextVehicle();
+
+	/** Console command: cycles to the previous available hero vehicle preset (same as [B]). */
+	UFUNCTION(Exec)
+	void PrevVehicle();
+
+	/** Console command: jumps to the first preset of the next role category (same as [N]). */
+	UFUNCTION(Exec)
+	void NextCategory();
+
+	/** Console command: cycles the police siren mode Off -> Wail -> Yelp -> Phaser (same as [J]). */
+	UFUNCTION(Exec)
+	void SirenMode();
+
+	/** Console command: triggers a dual-tone police airhorn blast (same as [K]). */
+	UFUNCTION(Exec)
+	void Airhorn();
+
+	/** Console command: repairs all structural, wheel and cosmetic damage on the active vehicle. */
+	UFUNCTION(Exec)
+	void RepairCar();
+
+	/** Console command: logs all loadable vehicle presets grouped by role to LogWSPC2. */
+	UFUNCTION(Exec)
+	void ListVehicles();
+
+	/** Console command: applies a severe frontal/wheel impact to demonstrate the 3-rule damage system. */
+	UFUNCTION(Exec)
+	void DamageDemo();
 
 	/** Shows a short message on this player's screen. Called by the server. */
 	UFUNCTION(Client, Reliable)
@@ -323,4 +382,22 @@ protected:
 	/** Asks the server to cycle to the next available built-in hero vehicle preset */
 	UFUNCTION(Server, Reliable)
 	void ServerCycleVehiclePreset();
+
+	UFUNCTION(Server, Reliable)
+	void ServerCycleVehicleDirection(int32 Direction);
+
+	UFUNCTION(Server, Reliable)
+	void ServerCycleVehicleCategory();
+
+	UFUNCTION(Server, Reliable)
+	void ServerCycleSirenMode();
+
+	UFUNCTION(Server, Reliable)
+	void ServerTriggerAirhorn();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRepairCurrentVehicle();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSwapNearestShowroom();
 };

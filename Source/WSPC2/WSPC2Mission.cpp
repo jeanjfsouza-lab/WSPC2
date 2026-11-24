@@ -146,6 +146,15 @@ void UWSPC2RouteDriver::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		return;
 	}
 
+	if (const UWSPC2VehicleDamageComponent* DamageComp = Car->GetVehicleDamage())
+	{
+		if (DamageComp->IsEngineStalled())
+		{
+			WSPC2Missions::Halt(Car);
+			return;
+		}
+	}
+
 	const FVector Location = Car->GetActorLocation();
 	const FVector2D Here(Location.X, Location.Y);
 	const int32 Num = Route.Num();
@@ -253,6 +262,28 @@ void UWSPC2RouteDriver::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		Want = FMath::Min(Want, 28.0f);
 	}
 
+	if (bAvoidTrafficAhead)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			const FVector Fwd = Car->GetActorForwardVector();
+			const FVector Up = Car->GetActorUpVector();
+			const FVector Start = Location + Fwd * 320.0f + Up * 85.0f;
+			const FVector End = Location + Fwd * 2300.0f + Up * 85.0f;
+			FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WSPC2TrafficLookahead), false, Car);
+			FHitResult Hit;
+			if (World->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Vehicle, FCollisionShape::MakeSphere(135.0f), QueryParams))
+			{
+				if (Cast<AWSPC2Pawn>(Hit.GetActor()))
+				{
+					const float HitDistCm = FVector::Dist(Location, Hit.ImpactPoint);
+					const float Alpha = FMath::Clamp((HitDistCm - 900.0f) / 1300.0f, 0.0f, 1.0f);
+					Want *= Alpha;
+				}
+			}
+		}
+	}
+
 	// stuck against something: back out for a moment, steering the other way
 	if (ReverseLeft > 0.0f)
 	{
@@ -284,6 +315,12 @@ void UWSPC2RouteDriver::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		Car->DoHandbrakeStop();
 	}
 	Car->DoSteering(FMath::Clamp(ErrorDeg / (bTight ? 14.0f : 28.0f), -1.0f, 1.0f));
+	if (Want < 2.0f)
+	{
+		Car->DoThrottle(0.0f);
+		Car->DoBrake(0.85f);
+		return;
+	}
 	const float Gap = Want - Speed;
 	if (Gap > 2.0f)
 	{

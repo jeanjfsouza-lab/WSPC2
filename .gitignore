@@ -24,6 +24,8 @@ Content/CitySampleCrowds/
 Content/CitySampleCrowd/
 Content/VehicleVarietyPack/
 Content/VehicleVarietyVol2/
+# Quixel/Fab materials, functions and textures the Fab plugin drops in (third-party; the repository is public)
+Content/Fab/
 # Built from the City Sample crowd pack by Tools/crew (local only: Epic content, the repository is public)
 Content/Crew/
 
@@ -41,4 +43,6 @@ Content/City/Generated/
 # Third-party/prepared vehicle & scenery GLBs imported by Tools/vehicles and Tools/scenery (local only)
 Content/Vehicles/Imported/
 Content/Scenery/Imported/
+# Vehicle audio made from royalty-free packs that forbid redistribution (Sonniss GDC): optional, loaded with a fallback
+Content/Audio/Vehicles/ThirdParty/
 __pycache__/
